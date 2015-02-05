@@ -1,11 +1,26 @@
 from __future__ import unicode_literals
 from __future__ import division
 
+from collections import defaultdict
+import random
+import time
+
+from colorama import init, Back
+init()
+
 # colors
 EMPTY, BLACK, BLUE, UNKNOWN = range(4)
 
 # constraint types
-BASIC, AREA, VERTICAL, LEFT_DIAG, RIGHT_DIAG = range(5)
+NONE, BASIC, AREA, VERTICAL, LEFT_DIAG, RIGHT_DIAG = range(6)
+
+
+def colored(text, color):
+    return color + text + Back.RESET
+
+
+def add(a, b):
+    return a[0] + b[0], a[1] + b[1]
 
 
 class Cell(object):
@@ -52,48 +67,91 @@ class Level(object):
                     self.cells[x, y] = Cell(cell)
 
     def neighbours(self, cell):
-        pass
+        for c in [
+            (-1, 0),
+            (-1, 1),
+            (0, 1),
+            (1, 0),
+            (1, -1),
+            (0, -1),
+        ]:
+            yield add(cell, c)
+
 
     def community(self, cell):
-        pass
+        for c in self.neighbours(cell):
+            yield c
+        for c in [
+            (-2, 0),
+            (-2, 1),
+            (-2, 2),
+            (-1, 2),
+            (0, 2),
+            (1, 1),
+            (2, 0),
+            (2, -1),
+            (2, -2),
+            (1, -2),
+            (0, -2),
+            (-1, -1),
+        ]:
+            yield add(cell, c)
+
+    def _line(self, cell, step):
+        while True:
+            cell = add(cell, step)
+            if cell not in self.cells:
+                return
+            yield cell
 
     def vertical(self, cell):
-        pass
+        return self._line(cell, (0, 1))
 
     def left_diag(self, cell):
-        pass
+        return self._line(cell, (-1, 1))
 
     def right_diag(self, cell):
-        pass
+        return self._line(cell, (1, 0))
 
     def get_cells(self, cell, constraint_type):
         return {
-            BASIC: neighbours,
-            AREA: community,
-            VERTICAL: vertical,
-            LEFT_DIAG: left_diag,
-            RIGHT_DIAG: right_diag,
+            BASIC: self.neighbours,
+            AREA: self.community,
+            VERTICAL: self.vertical,
+            LEFT_DIAG: self.left_diag,
+            RIGHT_DIAG: self.right_diag,
         }[constraint_type](cell)
 
-    def dump(self):
-        for r in range(33):
+    def dump(self, reds=None, blues=None):
+        colors = defaultdict(lambda: Back.RESET)
+        if blues:
+            for c in blues:
+                colors[c] = Back.CYAN
+        if reds:
+            for c in reds:
+                colors[c] = Back.MAGENTA
+
+        for r in range(17):
             s = ""
             for q in range(1,33,2):
-                s += "  "
                 x = q
                 y = r - (q + (q&1)) // 2
-                s += str(self.cells[x, y])
+                s += "  "
+                s += colored(str(self.cells[x, y]), colors[x, y])
             print s
 
-            s = ""
-            for q in range(0,33,2):
-                x = q
-                y = r - (q + (q&1)) // 2
-                s += str(self.cells[x, y])
-                s += "  "
-            print s
+            if r < 16:
+                s = ""
+                for q in range(0,33,2):
+                    x = q
+                    y = r - (q + (q&1)) // 2
+                    s += colored(str(self.cells[x, y]), colors[x, y])
+                    s += "  "
+                print s
 
 
 if __name__ == "__main__":
     lvl = Level(open("cookie1.hexcells").read())
-    lvl.dump()
+    c = 15, 0
+    for d in [BASIC, AREA, VERTICAL, LEFT_DIAG, RIGHT_DIAG]:
+        lvl.dump([c],lvl.get_cells(c, d))
