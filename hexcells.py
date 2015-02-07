@@ -14,6 +14,8 @@ EMPTY, BLACK, BLUE, UNKNOWN = range(1, 5)
 # constraint types
 BASIC, AREA, VERTICAL, LEFT_DIAG, RIGHT_DIAG = range(1, 6)
 
+# modifiers
+TOGETHER, APART = range(1, 3)
 
 def colored(text, color):
     return color + text + Back.RESET
@@ -73,6 +75,15 @@ class Cell(object):
         if self._parts[0] in 'xX':
             return 1
         return 0
+
+    @property
+    def modifier(self):
+        if self._parts[1] == 'c':
+            return TOGETHER
+        elif self._parts[1] == 'n':
+            return APART
+        else:
+            return None
 
     def play(self):
         assert self._parts[0] in 'ox'
@@ -207,10 +218,11 @@ class Level(object):
         if t is None:
             return None
         cells = self.get_cells(c, t)
-        count = self._count(cells)
-        return cells, count
+        count = self._true_count(cells)
+        modifier = self._cells[c].modifier
+        return t, cells, count, modifier
 
-    def _count(self, cells):
+    def _true_count(self, cells):
         return sum(self._cells[c].true_value for c in cells)
 
     def play(self, c, value):
@@ -246,25 +258,108 @@ class BasicConstraint(object):
     def get_moves(self, level):
         self._normalize(level)
         if self.done(level):
-            return []
+            return set()
         if self.count == len(self.cells):
-            return [(c, BLUE) for c in self.cells]
+            print "A", {(c, BLUE) for c in self.cells}
+            return {(c, BLUE) for c in self.cells}
         if self.count == 0:
-            return [(c, BLACK) for c in self.cells]
-        return []
+            print "B", {(c, BLACK) for c in self.cells}
+            return {(c, BLACK) for c in self.cells}
+        return set()
+
+class DisjointConstraint(BasicConstraint):
+    def __init__(self, base, cells, count, wrap, level):
+        super(DisjointConstraint, self).__init__(base, cells, count)
+        self.wrap = wrap
+        self.total_count = count
+        if wrap:
+            self.all_cells = cells
+        else:
+            self.all_cells = [c for c in cells if level.get_color(c) != EMPTY]
+        self._normalize(level)
+
+    def _normalize(self, level):
+        super(DisjointConstraint, self)._normalize(level)
+        if self.wrap:
+            for i, c in enumerate(self.all_cells):
+                if level.get_color(c) in [BLACK, EMPTY]:
+                    self.all_cells = self.all_cells[i:] + self.all_cells[:i]
+                    self.wrap = False
+                    break
+
+    def walk(self, cells, level):
+        """
+        unhandled
+
+               B
+           D3
+        ?      ?
+            B
+
+        left question mark is made blue by end rule
+        right one should be made black cause it would form a 3 run
+
+        ?
+           ?
+        D2
+
+        ?
+
+        can't have both top question marks
+        so bottom one should be blue
+
+        """
+
+        possible_run = []
+        possible_runs = []
+        blue_run = []
+        for c in cells:
+            color = level.get_color(c)
+
+            # N-1 in a row can't have another
+            if color == UNKNOWN and len(blue_run) == self.total_count - 1:
+                print "C", c, BLACK
+                yield c, BLACK
+
+            # continue or end the blue run
+            if color != BLUE:
+                blue_run = []
+            else:
+                blue_run.append(c)
+
+            # continue or end the possible run
+            if color in [UNKNOWN, BLUE]:
+                possible_run.append(c)
+            else:
+                if len(possible_run):
+                    possible_runs.append(possible_run)
+                possible_run=[]
+
+        # pick up a trailing possible run
+        if len(possible_run):
+            possible_runs.append(possible_run)
+
+        # no possible runs = fail
+        if len(possible_runs) < 1:
+            raise ConstraintViolation()
+
+        # one possible section, apply the end rule
+        if len(possible_runs) == 1 and not self.wrap:
+            possible_run = possible_runs[0]
+            if len(possible_run) == self.total_count + 1:
+                if level.get_color(possible_run[0]) != BLUE:
+                    print "D", possible_run[0], BLUE
+                    yield possible_run[0], BLUE
+
+    def get_moves(self, level):
+        moves = super(DisjointConstraint, self).get_moves(level)
+        moves.update(self.walk(self.all_cells, level))
+        moves.update(self.walk(reversed(self.all_cells), level))
+        return moves
 
 
 if __name__ == "__main__":
     level = Level(open("cookie1.hexcells").read())
-
-    c = 14, 0
-    level.play(c, BLUE)
-
-    c = 12, 0
-    level.play(c, BLUE)
-
-    c = 13, 1
-    level.play(c, BLACK)
 
     queue = set()
     cell_constraints = defaultdict(set)
@@ -272,22 +367,27 @@ if __name__ == "__main__":
     def cell_updated(c):
         res = level.get_constrant(c)
         if res:
-            cells, count = res
-            bc = BasicConstraint(c, cells, count)
-            queue.add(bc)
+            cs_type, cells, count, modifier = res
+            if modifier == APART:
+                cs = DisjointConstraint(c, cells, count, cs_type==BASIC, level)
+            else:
+                cs = BasicConstraint(c, cells, count)
+            queue.add(cs)
             for c in cells:
-                cell_constraints[c].add(bc)
+                cell_constraints[c].add(cs)
 
     for c in level.all_cells():
         cell_updated(c)
 
+    level.dump()
     while queue:
-        bc = queue.pop()
-        moves = bc.get_moves(level)
+        cs = queue.pop()
+        moves = cs.get_moves(level)
         if moves:
             for cell, color in moves:
                 level.play(cell, color)
                 cell_updated(cell)
                 queue.update(cell_constraints[cell])
-            level.dump(bc.bases, [c for c,_ in moves])
+            level.dump(cs.bases, [c for c,_ in moves])
+
 
