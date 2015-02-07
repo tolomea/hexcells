@@ -224,13 +224,14 @@ class ConstraintViolation(Exception):
 
 
 class BasicConstraint(object):
-    def __init__(self, cells, count):
+    def __init__(self, base, cells, count):
+        self.bases = [base]
         self.cells = cells
         self.count = count
 
-    def _normalize(self, lvl):
-        blue = [c for c in self.cells if lvl.get_color(c) == BLUE]
-        unknown = [c for c in self.cells if lvl.get_color(c) == UNKNOWN]
+    def _normalize(self, level):
+        blue = [c for c in self.cells if level.get_color(c) == BLUE]
+        unknown = [c for c in self.cells if level.get_color(c) == UNKNOWN]
         self.count -= len(blue)
         self.cells = unknown
         if self.count < 0:
@@ -238,13 +239,13 @@ class BasicConstraint(object):
         if self.count > len(self.cells):
             raise ConstraintViolation()
 
-    def done(self, lvl):
-        self._normalize(lvl)
+    def done(self, level):
+        self._normalize(level)
         return len(self.cells) == 0
 
-    def actionable(self, lvl):
-        self._normalize(lvl)
-        if self.done(lvl):
+    def get_moves(self, level):
+        self._normalize(level)
+        if self.done(level):
             return []
         if self.count == len(self.cells):
             return [(c, BLUE) for c in self.cells]
@@ -254,31 +255,39 @@ class BasicConstraint(object):
 
 
 if __name__ == "__main__":
-    lvl = Level(open("cookie1.hexcells").read())
-
-    c = 15, 0
-    for d in [BASIC, AREA, VERTICAL, LEFT_DIAG, RIGHT_DIAG]:
-        lvl.dump([c],lvl.get_cells(c, d))
+    level = Level(open("cookie1.hexcells").read())
 
     c = 14, 0
-    lvl.play(c, BLUE)
+    level.play(c, BLUE)
 
     c = 12, 0
-    lvl.play(c, BLUE)
+    level.play(c, BLUE)
 
     c = 13, 1
-    lvl.play(c, BLACK)
-    lvl.dump([c])
+    level.play(c, BLACK)
 
+    queue = set()
+    cell_constraints = defaultdict(set)
 
-    for i in range(5):
-        lvl.dump()
-        for c in lvl.all_cells():
-            res = lvl.get_constrant(c)
-            if res:
-                cells, count = res
-                bc = BasicConstraint(cells, count)
-                print bc.done(lvl), bc.actionable(lvl)
-                for cell, color in bc.actionable(lvl):
-                    lvl.play(cell, color)
+    def cell_updated(c):
+        res = level.get_constrant(c)
+        if res:
+            cells, count = res
+            bc = BasicConstraint(c, cells, count)
+            queue.add(bc)
+            for c in cells:
+                cell_constraints[c].add(bc)
+
+    for c in level.all_cells():
+        cell_updated(c)
+
+    while queue:
+        bc = queue.pop()
+        moves = bc.get_moves(level)
+        if moves:
+            for cell, color in moves:
+                level.play(cell, color)
+                cell_updated(cell)
+                queue.update(cell_constraints[cell])
+            level.dump(bc.bases, [c for c,_ in moves])
 
