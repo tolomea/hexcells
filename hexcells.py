@@ -9,10 +9,10 @@ from colorama import init, Back
 init()
 
 # colors
-EMPTY, BLACK, BLUE, UNKNOWN = range(4)
+EMPTY, BLACK, BLUE, UNKNOWN = range(1, 5)
 
 # constraint types
-NONE, BASIC, AREA, VERTICAL, LEFT_DIAG, RIGHT_DIAG = range(6)
+BASIC, AREA, VERTICAL, LEFT_DIAG, RIGHT_DIAG = range(1, 6)
 
 
 def colored(text, color):
@@ -25,11 +25,54 @@ def add(a, b):
 
 class Cell(object):
     def __init__(self, parts):
-        self.parts = parts
+        self._parts = parts
+
     def __str__(self):
-        if self.parts[0] == ".":
+        if self._parts[0] == ".":
             return "  "
-        return "".join(self.parts)
+        elif self._parts[0] in 'ox':
+            return ".."
+        else:
+            return "".join(self._parts)
+
+    @property
+    def color(self):
+        if self._parts[0] == 'O':
+            return BLACK
+        elif self._parts[0] == 'X':
+            return BLUE
+        elif self._parts[0] in 'ox':
+            return UNKNOWN
+        elif self._parts[0] in '\\|/.':
+            return EMPTY
+        else:
+            assert False
+
+    @property
+    def constraint_type(self):
+        if self._parts[1] == '.':
+            return None
+
+        if self._parts[0] in 'ox.':
+            return None
+        elif self._parts[0] == 'O':
+            return BASIC
+        elif self._parts[0] == 'X':
+            return AREA
+        elif self._parts[0] == '\\':
+            return RIGHT_DIAG
+        elif self._parts[0] == '|':
+            return VERTICAL
+        elif self._parts[0] == '/':
+            return LEFT_DIAG
+        else:
+            assert False
+
+    @property
+    def true_value(self):
+        if self._parts[0] in 'xX':
+            return 1
+        return 0
 
 
 class Level(object):
@@ -57,14 +100,15 @@ class Level(object):
         self.author = lines[2]
         self.custom_text_1 = lines[3]
         self.custom_text_2 = lines[4]
-        self.cells = {}
+        self._cells = {}
         for r, row in enumerate(lines[5:]):
             for q, cell in enumerate(zip(row[::2], row[1::2])):
                 if r%2 != q%2:
                     # even_q -> cube -> axial
                     x = q
                     y = r//2 - (q + (q&1)) // 2
-                    self.cells[x, y] = Cell(cell)
+                    index = x, y
+                    self._cells[index] = Cell(cell)
 
     def neighbours(self, cell):
         for c in [
@@ -76,7 +120,6 @@ class Level(object):
             (0, -1),
         ]:
             yield add(cell, c)
-
 
     def community(self, cell):
         for c in self.neighbours(cell):
@@ -100,7 +143,7 @@ class Level(object):
     def _line(self, cell, step):
         while True:
             cell = add(cell, step)
-            if cell not in self.cells:
+            if cell not in self._cells:
                 return
             yield cell
 
@@ -114,13 +157,16 @@ class Level(object):
         return self._line(cell, (1, 0))
 
     def get_cells(self, cell, constraint_type):
-        return {
+        return list({
             BASIC: self.neighbours,
             AREA: self.community,
             VERTICAL: self.vertical,
             LEFT_DIAG: self.left_diag,
             RIGHT_DIAG: self.right_diag,
-        }[constraint_type](cell)
+        }[constraint_type](cell))
+
+    def all_cells(self):
+        return self._cells.keys()
 
     def dump(self, reds=None, blues=None):
         colors = defaultdict(lambda: Back.RESET)
@@ -137,7 +183,7 @@ class Level(object):
                 x = q
                 y = r - (q + (q&1)) // 2
                 s += "  "
-                s += colored(str(self.cells[x, y]), colors[x, y])
+                s += colored(str(self._cells[x, y]), colors[x, y])
             print s
 
             if r < 16:
@@ -145,9 +191,28 @@ class Level(object):
                 for q in range(0,33,2):
                     x = q
                     y = r - (q + (q&1)) // 2
-                    s += colored(str(self.cells[x, y]), colors[x, y])
+                    s += colored(str(self._cells[x, y]), colors[x, y])
                     s += "  "
                 print s
+
+    def get_color(self, c):
+        return self._cells[c].color
+
+    def get_constrant(self, c):
+        t = self._cells[c].constraint_type
+        if t is None:
+            return None
+        cells = self.get_cells(c, t)
+        count = self._count(cells)
+        return cells, count
+
+    def _count(self, cells):
+        return sum(self._cells[c].true_value for c in cells)
+
+
+class BasicConstraint(object):
+    def __init__(self, cells, count):
+        pass
 
 
 if __name__ == "__main__":
@@ -155,3 +220,6 @@ if __name__ == "__main__":
     c = 15, 0
     for d in [BASIC, AREA, VERTICAL, LEFT_DIAG, RIGHT_DIAG]:
         lvl.dump([c],lvl.get_cells(c, d))
+
+    for c in lvl.all_cells():
+        lvl.get_color(c), lvl.get_constrant(c)
