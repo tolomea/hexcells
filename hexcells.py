@@ -379,15 +379,22 @@ if __name__ == "__main__":
     for c in level.all_cells():
         cell_updated(c)
 
+    def play(cell, color):
+        level.play(cell, color)
+        cell_updated(cell)
+        queue.update(cell_constraints[cell])
+
+    def evaluate():
+        while queue:
+            cs = queue.pop()
+            print cs
+            moves = cs.get_moves(level)
+            if moves:
+                for cell, color in moves:
+                    play(cell, color)
+                level.dump(cs.bases, [c for c,_ in moves])
+
     level.dump()
-    while queue:
-        cs = queue.pop()
-        moves = cs.get_moves(level)
-        if moves:
-            for cell, color in moves:
-                level.play(cell, color)
-                cell_updated(cell)
-                queue.update(cell_constraints[cell])
-            level.dump(cs.bases, [c for c,_ in moves])
+    evaluate()
 
 
