@@ -74,6 +74,10 @@ class Cell(object):
             return 1
         return 0
 
+    def play(self):
+        assert self._parts[0] in 'ox'
+        self._parts = self._parts[0].upper() + self._parts[1]
+
 
 class Level(object):
     def __init__(self, data):
@@ -209,17 +213,72 @@ class Level(object):
     def _count(self, cells):
         return sum(self._cells[c].true_value for c in cells)
 
+    def play(self, c, value):
+        print "playing", c, value
+        self._cells[c].play()
+        assert self._cells[c].color == value
+
+
+class ConstraintViolation(Exception):
+    pass
+
 
 class BasicConstraint(object):
     def __init__(self, cells, count):
-        pass
+        self.cells = cells
+        self.count = count
+
+    def _normalize(self, lvl):
+        blue = [c for c in self.cells if lvl.get_color(c) == BLUE]
+        unknown = [c for c in self.cells if lvl.get_color(c) == UNKNOWN]
+        self.count -= len(blue)
+        self.cells = unknown
+        if self.count < 0:
+            raise ConstraintViolation()
+        if self.count > len(self.cells):
+            raise ConstraintViolation()
+
+    def done(self, lvl):
+        self._normalize(lvl)
+        return len(self.cells) == 0
+
+    def actionable(self, lvl):
+        self._normalize(lvl)
+        if self.done(lvl):
+            return []
+        if self.count == len(self.cells):
+            return [(c, BLUE) for c in self.cells]
+        if self.count == 0:
+            return [(c, BLACK) for c in self.cells]
+        return []
 
 
 if __name__ == "__main__":
     lvl = Level(open("cookie1.hexcells").read())
+
     c = 15, 0
     for d in [BASIC, AREA, VERTICAL, LEFT_DIAG, RIGHT_DIAG]:
         lvl.dump([c],lvl.get_cells(c, d))
 
-    for c in lvl.all_cells():
-        lvl.get_color(c), lvl.get_constrant(c)
+    c = 14, 0
+    lvl.play(c, BLUE)
+
+    c = 12, 0
+    lvl.play(c, BLUE)
+
+    c = 13, 1
+    lvl.play(c, BLACK)
+    lvl.dump([c])
+
+
+    for i in range(5):
+        lvl.dump()
+        for c in lvl.all_cells():
+            res = lvl.get_constrant(c)
+            if res:
+                cells, count = res
+                bc = BasicConstraint(cells, count)
+                print bc.done(lvl), bc.actionable(lvl)
+                for cell, color in bc.actionable(lvl):
+                    lvl.play(cell, color)
+
