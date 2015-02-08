@@ -464,5 +464,13 @@ if __name__ == "__main__":
     while queue:
         evaluate()
         arithmetic()
+
+    count = level.total_count()
+    add_constraint(BasicConstraint({"global"}, level.all_cells(), count, count, level))
+
+    while queue:
+        evaluate()
+        arithmetic()
+
     level.dump()
     print "Done:", level.done()
