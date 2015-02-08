@@ -328,17 +328,17 @@ class BasicConstraint(object):
         return "{s.__class__.__name__}({s.bases}, {s.orig_min_count}, {s.orig_max_count})".format(s=self)
 
 
-class DisjointConstraint(BasicConstraint):
+class _AdvancedConstraint(BasicConstraint):
     def __init__(self, bases, cells, count, wrap, level):
         self.wrap = wrap
         if wrap:
             self.all_cells = cells
         else:
             self.all_cells = [c for c in cells if level.get_color(c) != EMPTY]
-        super(DisjointConstraint, self).__init__(bases, cells, count, count, level)
+        super(_AdvancedConstraint, self).__init__(bases, cells, count, count, level)
 
     def get_moves(self, level):
-        moves = super(DisjointConstraint, self).get_moves(level)
+        moves = super(_AdvancedConstraint, self).get_moves(level)
         if self.done(level):
             return set()
 
@@ -391,6 +391,11 @@ class DisjointConstraint(BasicConstraint):
         return moves
 
     def _is_valid(self, new_colors):
+        raise NotImplemented()
+
+
+class DisjointConstraint(_AdvancedConstraint):
+    def _is_valid(self, new_colors):
         state = 0
         for c in new_colors:
             if state == 0:  # looking for blues
@@ -403,6 +408,22 @@ class DisjointConstraint(BasicConstraint):
                 if c == BLUE:
                     return True
         return False
+
+
+class JointConstraint(_AdvancedConstraint):
+    def _is_valid(self, new_colors):
+        state = 0
+        for c in new_colors:
+            if state == 0:  # looking for blues
+                if c == BLUE:
+                    state = 1
+            if state == 1:  # looking for a gap
+                if c != BLUE:
+                    state = 2
+            if state == 2:  # check no more blues
+                if c == BLUE:
+                    return False
+        return True
 
 
 if __name__ == "__main__":
@@ -432,6 +453,8 @@ if __name__ == "__main__":
             cs_type, cells, count, modifier = res
             if modifier == APART:
                 cs = DisjointConstraint({c}, cells, count, cs_type==BASIC, level)
+            elif modifier == TOGETHER:
+                cs = JointConstraint({c}, cells, count, cs_type==BASIC, level)
             else:
                 cs = BasicConstraint({c}, cells, count, count, level)
             add_constraint(cs)
