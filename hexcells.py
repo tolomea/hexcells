@@ -259,21 +259,24 @@ class ConstraintViolation(Exception):
 
 
 class BasicConstraint(object):
-    def __init__(self, bases, cells, count, level):
+    def __init__(self, bases, cells, min_count, max_count, level):
         self.bases = bases
         self.cells = set(cells)
-        self.count = count
-        self.orig_count = count
+        self.min_count = min_count
+        self.max_count = max_count
+        self.orig_min_count = min_count
+        self.orig_max_count = max_count
         self._normalize(level)
 
     def _normalize(self, level):
         blue = [c for c in self.cells if level.get_color(c) == BLUE]
         unknown = {c for c in self.cells if level.get_color(c) == UNKNOWN}
-        self.count -= len(blue)
+        self.min_count = max(0, self.min_count - len(blue))
+        self.max_count -= len(blue)
         self.cells = unknown
-        if self.count < 0:
+        if self.max_count < self.min_count:
             raise ConstraintViolation()
-        if self.count > len(self.cells):
+        if self.min_count > len(self.cells):
             raise ConstraintViolation()
 
     def done(self, level):
@@ -284,9 +287,9 @@ class BasicConstraint(object):
         self._normalize(level)
         if self.done(level):
             return set()
-        if self.count == len(self.cells):
+        if self.min_count == len(self.cells):
             return {(c, BLUE) for c in self.cells}
-        if self.count == 0:
+        if self.max_count == 0:
             return {(c, BLACK) for c in self.cells}
         return set()
 
@@ -294,15 +297,16 @@ class BasicConstraint(object):
         """ if other is a subset of us, return the complement of that subset """
         if other.cells < self.cells:
             cells = {c for c in self.cells if c not in other.cells}
-            count = self.count - other.count
+            min_count = max(self.min_count - other.max_count, 0)
+            max_count = min(self.max_count - other.min_count, len(cells))
             bases = self.bases | other.bases
-            assert count >= 0
-            return BasicConstraint(bases, cells, count, level)
+            assert max_count >= min_count
+            return BasicConstraint(bases, cells, min_count, max_count, level)
         else:
             return None
 
     def __str__(self):
-        return "{s.__class__.__name__}({s.bases},{s.orig_count})".format(s=self)
+        return "{s.__class__.__name__}({s.bases}, {s.orig_min_count}, {s.orig_max_count})".format(s=self)
 
 
 class DisjointConstraint(BasicConstraint):
@@ -312,7 +316,7 @@ class DisjointConstraint(BasicConstraint):
             self.all_cells = cells
         else:
             self.all_cells = [c for c in cells if level.get_color(c) != EMPTY]
-        super(DisjointConstraint, self).__init__(bases, cells, count, level)
+        super(DisjointConstraint, self).__init__(bases, cells, count, count, level)
 
     def get_moves(self, level):
         moves = super(DisjointConstraint, self).get_moves(level)
@@ -322,7 +326,7 @@ class DisjointConstraint(BasicConstraint):
         current_colors = [level.get_color(c) for c in self.all_cells]
         blue_count = sum(1 for x in current_colors if x == BLUE)
         unknown_indicies = [i for i, x in enumerate(current_colors) if x == UNKNOWN]
-        needed = self.orig_count - blue_count
+        needed = self.orig_min_count - blue_count
 
         # try out every blue placement and collect the valid ones
         valid = []
@@ -390,7 +394,12 @@ if __name__ == "__main__":
     def add_constraint(cs):
         key = frozenset(cs.cells)
         if key in all_constraints:
-            assert all_constraints[key].count == cs.count
+            orig = all_constraints[key]
+            min_count = max(orig.min_count, cs.min_count)
+            max_count = min(orig.max_count, cs.max_count)
+            assert min_count <= max_count
+            orig.min_count = min_count
+            orig.max_count = max_count
         else:
             if DEBUG: print "new", cs
             all_constraints[key] = cs
@@ -405,7 +414,7 @@ if __name__ == "__main__":
             if modifier == APART:
                 cs = DisjointConstraint({c}, cells, count, cs_type==BASIC, level)
             else:
-                cs = BasicConstraint({c}, cells, count, level)
+                cs = BasicConstraint({c}, cells, count, count, level)
             add_constraint(cs)
 
     def play(cell, color):
@@ -440,8 +449,9 @@ if __name__ == "__main__":
         for cs in new_constraints:
             add_constraint(cs)
 
-    level = Level(open("cookie5.hexcells").read())
-    add_constraint(BasicConstraint({"global"}, level.all_cells(), level.total_count(), level))
+    level = Level(open("cookie1.hexcells").read())
+    count = level.total_count()
+    add_constraint(BasicConstraint({"global"}, level.all_cells(), count, count, level))
     for c in level.all_cells():
         cell_updated(c)
     if DEBUG: level.dump()
