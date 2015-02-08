@@ -4,6 +4,7 @@ from __future__ import division
 from collections import defaultdict
 import random
 import time
+import itertools
 
 from colorama import init, Back
 init()
@@ -267,6 +268,7 @@ class BasicConstraint(object):
             return {(c, BLACK) for c in self.cells}
         return set()
 
+
 class DisjointConstraint(BasicConstraint):
     def __init__(self, base, cells, count, wrap, level):
         super(DisjointConstraint, self).__init__(base, cells, count)
@@ -276,86 +278,72 @@ class DisjointConstraint(BasicConstraint):
             self.all_cells = cells
         else:
             self.all_cells = [c for c in cells if level.get_color(c) != EMPTY]
-        self._normalize(level)
-
-    def _normalize(self, level):
-        super(DisjointConstraint, self)._normalize(level)
-        if self.wrap:
-            for i, c in enumerate(self.all_cells):
-                if level.get_color(c) in [BLACK, EMPTY]:
-                    self.all_cells = self.all_cells[i:] + self.all_cells[:i]
-                    self.wrap = False
-                    break
-
-    def walk(self, cells, level):
-        """
-        unhandled
-
-               B
-           D3
-        ?      ?
-            B
-
-        left question mark is made blue by end rule
-        right one should be made black cause it would form a 3 run
-
-        ?
-           ?
-        D2
-
-        ?
-
-        can't have both top question marks
-        so bottom one should be blue
-
-        """
-
-        possible_run = []
-        possible_runs = []
-        blue_run = []
-        for c in cells:
-            color = level.get_color(c)
-
-            # N-1 in a row can't have another
-            if color == UNKNOWN and len(blue_run) == self.total_count - 1:
-                print "C", c, BLACK
-                yield c, BLACK
-
-            # continue or end the blue run
-            if color != BLUE:
-                blue_run = []
-            else:
-                blue_run.append(c)
-
-            # continue or end the possible run
-            if color in [UNKNOWN, BLUE]:
-                possible_run.append(c)
-            else:
-                if len(possible_run):
-                    possible_runs.append(possible_run)
-                possible_run=[]
-
-        # pick up a trailing possible run
-        if len(possible_run):
-            possible_runs.append(possible_run)
-
-        # no possible runs = fail
-        if len(possible_runs) < 1:
-            raise ConstraintViolation()
-
-        # one possible section, apply the end rule
-        if len(possible_runs) == 1 and not self.wrap:
-            possible_run = possible_runs[0]
-            if len(possible_run) == self.total_count + 1:
-                if level.get_color(possible_run[0]) != BLUE:
-                    print "D", possible_run[0], BLUE
-                    yield possible_run[0], BLUE
 
     def get_moves(self, level):
         moves = super(DisjointConstraint, self).get_moves(level)
-        moves.update(self.walk(self.all_cells, level))
-        moves.update(self.walk(reversed(self.all_cells), level))
+
+        current_colors = [level.get_color(c) for c in self.all_cells]
+        blue_count = sum(1 for x in current_colors if x == BLUE)
+        unknown_indicies = [i for i, x in enumerate(current_colors) if x == UNKNOWN]
+        needed = self.total_count - blue_count
+
+        # try out every blue placement and collect the valid ones
+        valid = []
+        for indicies in itertools.combinations(unknown_indicies, needed):
+            indicies = set(indicies)
+            new_colors = []
+            for i, c in enumerate(current_colors):
+                if c == UNKNOWN:
+                    if i in indicies:
+                        new_colors.append(BLUE)
+                    else:
+                        new_colors.append(BLACK)
+                else:
+                    new_colors.append(c)
+
+            # handle wrapping by moving blues from the start to the end
+            if self.wrap:
+                cnt = 0
+                for c in new_colors:
+                    if c == BLUE:
+                        cnt += 1
+                    else:
+                        break
+                wrapped = new_colors[cnt:] + new_colors[:cnt]
+            else:
+                wrapped = new_colors
+
+            # check that this is a valid sequence
+            if self._is_valid(wrapped):
+                valid.append(new_colors)
+
+        # collect the results
+        if len(valid) < 1:
+            ConstraintViolation()
+        valid_colors = [set(x) for x in zip(*valid)]
+        for cell, current_color, valid_colors in zip(self.all_cells, current_colors, valid_colors):
+            if current_color == UNKNOWN:
+                if len(valid_colors) == 1:
+                    print "C", cell, list(valid_colors)[0]
+                    moves.add((cell, valid_colors.pop()))
+            else:
+                assert {current_color} == valid_colors
+
         return moves
+
+    def _is_valid(self, new_colors):
+        state = 0
+        for c in new_colors:
+            if state == 0:  # looking for blues
+                if c == BLUE:
+                    state = 1
+            if state == 1:  # looking for a gap
+                if c != BLUE:
+                    state = 2
+            if state == 2:  # looking for more blues
+                if c == BLUE:
+                    return True
+        return False
 
 
 if __name__ == "__main__":
@@ -396,5 +384,3 @@ if __name__ == "__main__":
 
     level.dump()
     evaluate()
-
-
