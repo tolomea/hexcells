@@ -10,7 +10,7 @@ from cached_property import cached_property
 from colorama import init, Back
 init()
 
-DEBUG = 15
+DEBUG = 0
 
 # colors
 EMPTY, BLACK, BLUE, UNKNOWN = range(1, 5)
@@ -429,100 +429,118 @@ class JointConstraint(_AdvancedConstraint):
         return True
 
 
-if __name__ == "__main__":
-    queue = set()
-    cell_constraints = defaultdict(set)
-    all_constraints = {}
+class Solver(object):
+    def __init__(self, level):
+        self.queue = set()
+        self.cell_constraints = defaultdict(set)
+        self.all_constraints = {}
+        self.level = level
 
-    def add_constraint(cs):
+        for c in level.all_cells():
+            self.cell_updated(c)
+
+    def add_constraint(self, cs):
         key = frozenset(cs.cells)
-        if key in all_constraints:
-            orig = all_constraints[key]
+        if key in self.all_constraints:
+            orig = self.all_constraints[key]
             min_count = max(orig.min_count, cs.min_count)
             max_count = min(orig.max_count, cs.max_count)
             assert min_count <= max_count
             orig.min_count = min_count
             orig.max_count = max_count
+            # TODO should this requeue the constraint?
         else:
             if DEBUG > 30: print "new", cs
-            all_constraints[key] = cs
-            queue.add(cs)
+            self.all_constraints[key] = cs
+            self.queue.add(cs)
             for c in cs.cells:
-                cell_constraints[c].add(cs)
+                self.cell_constraints[c].add(cs)
 
-    def cell_updated(c):
-        res = level.get_constrant(c)
+    def cell_updated(self, c):
+        res = self.level.get_constrant(c)
         if res:
             cs_type, cells, count, modifier = res
             if modifier == APART:
-                cs = DisjointConstraint({c}, cells, count, cs_type==BASIC, level)
+                cs = DisjointConstraint({c}, cells, count, cs_type==BASIC, self.level)
             elif modifier == TOGETHER:
-                cs = JointConstraint({c}, cells, count, cs_type==BASIC, level)
+                cs = JointConstraint({c}, cells, count, cs_type==BASIC, self.level)
             else:
-                cs = BasicConstraint({c}, cells, count, count, level)
-            add_constraint(cs)
+                cs = BasicConstraint({c}, cells, count, count, self.level)
+            self.add_constraint(cs)
 
-    def play(cell, color):
+    def play(self, cell, color):
         if DEBUG > 20: print "playing", c, color
-        level.play(cell, color)
-        cell_updated(cell)
-        for cs in cell_constraints[cell]:
+        self.level.play(cell, color)
+        self.cell_updated(cell)
+        for cs in self.cell_constraints[cell]:
             if cell in cs.cells:
-                queue.add(cs)
+                self.queue.add(cs)
 
-    def evaluate():
+    def evaluate(self):
         if DEBUG > 20: print "evaluating"
-        while queue:
-            cs = queue.pop()
+        while self.queue:
+            cs = self.queue.pop()
             if DEBUG > 30: print "chk", cs
-            moves = cs.get_moves(level)
+            moves = cs.get_moves(self.level)
             if moves:
                 for cell, color in moves:
-                    play(cell, color)
-                if DEBUG > 10: level.dump(cs.bases, [c for c,_ in moves])
+                    self.play(cell, color)
+                if DEBUG > 10: self.level.dump(cs.bases, [c for c,_ in moves])
 
-    def arithmetic():
-        global all_constraints
+    def arithmetic(self):
         if DEBUG > 20: print "constraint arithmetic"
-        all_constraints = {frozenset(cs.cells):cs for cs in all_constraints.values() if not cs.done(level)}
+        self.all_constraints = {frozenset(cs.cells):cs for cs in self.all_constraints.values() if not cs.done(self.level)}
         new_constraints = []
-        for cs1 in all_constraints.values():
-            for cs2 in all_constraints.values():
-                new_constraint = cs1.get_inverse_subset_constraint(cs2, level)
+        for cs1 in self.all_constraints.values():
+            for cs2 in self.all_constraints.values():
+                new_constraint = cs1.get_inverse_subset_constraint(cs2, self.level)
                 if new_constraint:
                     new_constraints.append(new_constraint)
         for cs in new_constraints:
-            add_constraint(cs)
+            self.add_constraint(cs)
 
-    def advanced_arithmetic():
+    def advanced_arithmetic(self):
         new_constraints = []
-        for cs1 in all_constraints.values():
-            for cs2 in all_constraints.values():
-                new_constraint = cs1.get_intersection(cs2, level)
+        for cs1 in self.all_constraints.values():
+            for cs2 in self.all_constraints.values():
+                new_constraint = cs1.get_intersection(cs2, self.level)
                 if new_constraint:
                     new_constraints.append(new_constraint)
         for cs in new_constraints:
-            add_constraint(cs)
+            self.add_constraint(cs)
 
+    def solve(self):
+        if DEBUG > 10: level.dump()
+
+        while self.queue:
+            self.evaluate()
+            self.arithmetic()
+            if not self.queue:
+                self.advanced_arithmetic()
+
+        # add in the global constraint
+        count = self.level.total_count()
+        cells = self.level.all_cells()
+        self.add_constraint(BasicConstraint({"global"}, cells, count, count, self.level))
+
+        while self.queue:
+            self.evaluate()
+            self.arithmetic()
+            if not self.queue:
+                self.advanced_arithmetic()
+
+        return level.done
+
+
+if __name__ == "__main__":
     level = Level(open("cookie5.hexcells").read())
-    for c in level.all_cells():
-        cell_updated(c)
-    if DEBUG > 10: level.dump()
 
-    while queue:
-        evaluate()
-        arithmetic()
-        if not queue:
-            advanced_arithmetic()
+    start = time.time()
 
-    count = level.total_count()
-    add_constraint(BasicConstraint({"global"}, level.all_cells(), count, count, level))
+    Solver(level).solve()
 
-    while queue:
-        evaluate()
-        arithmetic()
-        if not queue:
-            advanced_arithmetic()
+    print time.time() - start
 
     level.dump()
     print "Done:", level.done()
+
