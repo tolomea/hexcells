@@ -9,6 +9,8 @@ import itertools
 from colorama import init, Back
 init()
 
+DEBUG = False
+
 # colors
 EMPTY, BLACK, BLUE, UNKNOWN = range(1, 5)
 
@@ -89,6 +91,10 @@ class Cell(object):
     def play(self):
         assert self._parts[0] in 'ox'
         self._parts = self._parts[0].upper() + self._parts[1]
+
+    @property
+    def done(self):
+        return self._parts[0] not in 'ox'
 
 
 class Level(object):
@@ -241,9 +247,11 @@ class Level(object):
         return sum(self._cells[c].true_value for c in cells)
 
     def play(self, c, value):
-        print "playing", c, value
         self._cells[c].play()
         assert self._cells[c].color == value
+
+    def done(self):
+        return all(self._cells[c].done for c in self.all_cells())
 
 
 class ConstraintViolation(Exception):
@@ -255,7 +263,7 @@ class BasicConstraint(object):
         self.bases = bases
         self.cells = set(cells)
         self.count = count
-        self.total_count = count
+        self.orig_count = count
         self._normalize(level)
 
     def _normalize(self, level):
@@ -277,10 +285,8 @@ class BasicConstraint(object):
         if self.done(level):
             return set()
         if self.count == len(self.cells):
-            print "A", {(c, BLUE) for c in self.cells}
             return {(c, BLUE) for c in self.cells}
         if self.count == 0:
-            print "B", {(c, BLACK) for c in self.cells}
             return {(c, BLACK) for c in self.cells}
         return set()
 
@@ -296,7 +302,7 @@ class BasicConstraint(object):
             return None
 
     def __str__(self):
-        return "{s.__class__.__name__}({s.bases},{s.total_count})".format(s=self)
+        return "{s.__class__.__name__}({s.bases},{s.orig_count})".format(s=self)
 
 
 class DisjointConstraint(BasicConstraint):
@@ -316,7 +322,7 @@ class DisjointConstraint(BasicConstraint):
         current_colors = [level.get_color(c) for c in self.all_cells]
         blue_count = sum(1 for x in current_colors if x == BLUE)
         unknown_indicies = [i for i, x in enumerate(current_colors) if x == UNKNOWN]
-        needed = self.total_count - blue_count
+        needed = self.orig_count - blue_count
 
         # try out every blue placement and collect the valid ones
         valid = []
@@ -355,7 +361,6 @@ class DisjointConstraint(BasicConstraint):
         for cell, current_color, valid_colors in zip(self.all_cells, current_colors, valid_colors):
             if current_color == UNKNOWN:
                 if len(valid_colors) == 1:
-                    print "C", cell, list(valid_colors)[0]
                     moves.add((cell, valid_colors.pop()))
             else:
                 assert {current_color} == valid_colors
@@ -387,7 +392,7 @@ if __name__ == "__main__":
         if key in all_constraints:
             assert all_constraints[key].count == cs.count
         else:
-            print "new", cs
+            if DEBUG: print "new", cs
             all_constraints[key] = cs
             queue.add(cs)
             for c in cs.cells:
@@ -404,6 +409,7 @@ if __name__ == "__main__":
             add_constraint(cs)
 
     def play(cell, color):
+        if DEBUG: print "playing", c, value
         level.play(cell, color)
         cell_updated(cell)
         for cs in cell_constraints[cell]:
@@ -411,19 +417,19 @@ if __name__ == "__main__":
                 queue.add(cs)
 
     def evaluate():
-        print "evaluating"
+        if DEBUG: print "evaluating"
         while queue:
             cs = queue.pop()
-            print "chk", cs
+            if DEBUG: print "chk", cs
             moves = cs.get_moves(level)
             if moves:
                 for cell, color in moves:
                     play(cell, color)
-                level.dump(cs.bases, [c for c,_ in moves])
+                if DEBUG: level.dump(cs.bases, [c for c,_ in moves])
 
     def arithmetic():
         global all_constraints
-        print "constraint arithmetic"
+        if DEBUG: print "constraint arithmetic"
         all_constraints = {frozenset(cs.cells):cs for cs in all_constraints.values() if not cs.done(level)}
         new_constraints = []
         for cs1 in all_constraints.values():
@@ -434,14 +440,14 @@ if __name__ == "__main__":
         for cs in new_constraints:
             add_constraint(cs)
 
-
     level = Level(open("cookie5.hexcells").read())
     add_constraint(BasicConstraint({"global"}, level.all_cells(), level.total_count(), level))
     for c in level.all_cells():
         cell_updated(c)
-    level.dump()
+    if DEBUG: level.dump()
 
     while queue:
         evaluate()
         arithmetic()
     level.dump()
+    print "Done:", level.done()
