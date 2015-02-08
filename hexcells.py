@@ -1,3 +1,14 @@
+"""
+Hexcells Solver
+
+Usage:
+  hexcells.py HEXCELLS_FILE [--debug=LEVEL]
+
+Options:
+  -h --help        Show this screen.
+  --debug=LEVEL  Debug print level [default: 10]
+"""
+
 from __future__ import unicode_literals
 from __future__ import division
 
@@ -6,6 +17,7 @@ import random
 import time
 import itertools
 
+from docopt import docopt
 from cached_property import cached_property
 from colorama import init, Back
 init()
@@ -469,7 +481,7 @@ class Solver(object):
             self.add_constraint(cs)
 
     def play(self, cell, color):
-        if DEBUG > 20: print "playing", c, color
+        if DEBUG > 20: print "playing", cell, color
         self.level.play(cell, color)
         self.cell_updated(cell)
         for cs in self.cell_constraints[cell]:
@@ -500,6 +512,7 @@ class Solver(object):
             self.add_constraint(cs)
 
     def advanced_arithmetic(self):
+        if DEBUG > 20: print "advanced arithmetic"
         new_constraints = []
         for cs1 in self.all_constraints.values():
             for cs2 in self.all_constraints.values():
@@ -532,8 +545,15 @@ class Solver(object):
         return level.done
 
 
+
 if __name__ == "__main__":
-    level = Level(open("cookie5.hexcells").read())
+    arguments = docopt(__doc__)
+    DEBUG = int(arguments["--debug"])
+
+    fname = arguments["HEXCELLS_FILE"]
+
+
+    level = Level(open(fname).read())
 
     start = time.time()
 
@@ -544,3 +564,5 @@ if __name__ == "__main__":
     level.dump()
     print "Done:", level.done()
 
+    if not level.done:
+        sys.exit(1)
