@@ -6,6 +6,7 @@ import random
 import time
 import itertools
 
+from cached_property import cached_property
 from colorama import init, Back
 init()
 
@@ -40,7 +41,7 @@ class Cell(object):
         else:
             return "".join(self._parts)
 
-    @property
+    @cached_property
     def color(self):
         if self._parts[0] == 'O':
             return BLACK
@@ -53,7 +54,7 @@ class Cell(object):
         else:
             assert False
 
-    @property
+    @cached_property
     def constraint_type(self):
         if self._parts[1] == '.':
             return None
@@ -73,13 +74,13 @@ class Cell(object):
         else:
             assert False
 
-    @property
+    @cached_property
     def true_value(self):
         if self._parts[0] in 'xX':
             return 1
         return 0
 
-    @property
+    @cached_property
     def modifier(self):
         if self._parts[1] == 'c':
             return TOGETHER
@@ -91,6 +92,8 @@ class Cell(object):
     def play(self):
         assert self._parts[0] in 'ox'
         self._parts = self._parts[0].upper() + self._parts[1]
+        del self.color
+        del self.constraint_type
 
     @property
     def done(self):
@@ -274,10 +277,10 @@ class BasicConstraint(object):
         self._normalize(level)
 
     def _normalize(self, level):
-        blue = [c for c in self.cells if level.get_color(c) == BLUE]
+        blue_count = sum(1 for c in self.cells if level.get_color(c) == BLUE)
         unknown = {c for c in self.cells if level.get_color(c) == UNKNOWN}
-        self.min_count = max(0, self.min_count - len(blue))
-        self.max_count -= len(blue)
+        self.min_count = max(0, self.min_count - blue_count)
+        self.max_count -= blue_count
         self.cells = unknown
         if self.max_count < self.min_count:
             raise ConstraintViolation()
