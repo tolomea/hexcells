@@ -9,7 +9,7 @@ import itertools
 from colorama import init, Back
 init()
 
-DEBUG = True
+DEBUG = 15
 
 # colors
 EMPTY, BLACK, BLUE, UNKNOWN = range(1, 5)
@@ -420,7 +420,7 @@ if __name__ == "__main__":
             orig.min_count = min_count
             orig.max_count = max_count
         else:
-            if DEBUG: print "new", cs
+            if DEBUG > 30: print "new", cs
             all_constraints[key] = cs
             queue.add(cs)
             for c in cs.cells:
@@ -437,7 +437,7 @@ if __name__ == "__main__":
             add_constraint(cs)
 
     def play(cell, color):
-        if DEBUG: print "playing", c, color
+        if DEBUG > 20: print "playing", c, color
         level.play(cell, color)
         cell_updated(cell)
         for cs in cell_constraints[cell]:
@@ -445,19 +445,19 @@ if __name__ == "__main__":
                 queue.add(cs)
 
     def evaluate():
-        if DEBUG: print "evaluating"
+        if DEBUG > 20: print "evaluating"
         while queue:
             cs = queue.pop()
-            if DEBUG: print "chk", cs
+            if DEBUG > 30: print "chk", cs
             moves = cs.get_moves(level)
             if moves:
                 for cell, color in moves:
                     play(cell, color)
-                if DEBUG: level.dump(cs.bases, [c for c,_ in moves])
+                if DEBUG > 10: level.dump(cs.bases, [c for c,_ in moves])
 
     def arithmetic():
         global all_constraints
-        if DEBUG: print "constraint arithmetic"
+        if DEBUG > 20: print "constraint arithmetic"
         all_constraints = {frozenset(cs.cells):cs for cs in all_constraints.values() if not cs.done(level)}
         new_constraints = []
         for cs1 in all_constraints.values():
@@ -481,7 +481,7 @@ if __name__ == "__main__":
     level = Level(open("cookie5.hexcells").read())
     for c in level.all_cells():
         cell_updated(c)
-    if DEBUG: level.dump()
+    if DEBUG > 10: level.dump()
 
     while queue:
         evaluate()
