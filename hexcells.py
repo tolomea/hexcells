@@ -9,7 +9,7 @@ import itertools
 from colorama import init, Back
 init()
 
-DEBUG = False
+DEBUG = True
 
 # colors
 EMPTY, BLACK, BLUE, UNKNOWN = range(1, 5)
@@ -221,6 +221,7 @@ class Level(object):
                 y = r - (q + (q&1)) // 2
                 s += "  "
                 s += colored(str(self._cells.get((x, y), Cell(".."))), colors[x, y])
+                del colors[x, y]
             print s
 
             s = ""
@@ -229,7 +230,11 @@ class Level(object):
                 y = r - (q + (q&1)) // 2
                 s += colored(str(self._cells.get((x, y), Cell(".."))), colors[x, y])
                 s += "  "
+                del colors[x, y]
             print s
+
+        for key, color in colors.iteritems():
+            print colored(key, color)
 
     def get_color(self, c):
         return self._cells[c].color
@@ -418,7 +423,7 @@ if __name__ == "__main__":
             add_constraint(cs)
 
     def play(cell, color):
-        if DEBUG: print "playing", c, value
+        if DEBUG: print "playing", c, color
         level.play(cell, color)
         cell_updated(cell)
         for cs in cell_constraints[cell]:
