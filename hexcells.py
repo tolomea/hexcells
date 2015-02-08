@@ -298,17 +298,31 @@ class BasicConstraint(object):
             return {(c, BLACK) for c in self.cells}
         return set()
 
-    def get_inverse_subset_constraint(self, other):
+    def get_inverse_subset_constraint(self, other, level):
         """ if other is a subset of us, return the complement of that subset """
         if other.cells < self.cells:
+            bases = self.bases | other.bases
             cells = {c for c in self.cells if c not in other.cells}
             min_count = max(self.min_count - other.max_count, 0)
             max_count = min(self.max_count - other.min_count, len(cells))
-            bases = self.bases | other.bases
+            if min_count == 0 and max_count == len(cells):
+                return None
             assert max_count >= min_count
             return BasicConstraint(bases, cells, min_count, max_count, level)
         else:
             return None
+
+    def get_intersection(self, other, level):
+        bases = self.bases | other.bases
+        cells = self.cells & other.cells
+        self_rem = len(self.cells) - len(cells)
+        other_rem = len(other.cells) - len(cells)
+        min_count = max(self.min_count - self_rem, other.min_count - other_rem, 0)
+        max_count = min(self.max_count, other.max_count, len(cells))
+        if min_count == 0 and max_count == len(cells):
+            return None
+        assert max_count >= min_count
+        return BasicConstraint(bases, cells, min_count, max_count, level)
 
     def __str__(self):
         return "{s.__class__.__name__}({s.bases}, {s.orig_min_count}, {s.orig_max_count})".format(s=self)
@@ -448,15 +462,23 @@ if __name__ == "__main__":
         new_constraints = []
         for cs1 in all_constraints.values():
             for cs2 in all_constraints.values():
-                new_constraint = cs1.get_inverse_subset_constraint(cs2)
+                new_constraint = cs1.get_inverse_subset_constraint(cs2, level)
                 if new_constraint:
                     new_constraints.append(new_constraint)
         for cs in new_constraints:
             add_constraint(cs)
 
-    level = Level(open("cookie1.hexcells").read())
-    count = level.total_count()
-    add_constraint(BasicConstraint({"global"}, level.all_cells(), count, count, level))
+    def advanced_arithmetic():
+        new_constraints = []
+        for cs1 in all_constraints.values():
+            for cs2 in all_constraints.values():
+                new_constraint = cs1.get_intersection(cs2, level)
+                if new_constraint:
+                    new_constraints.append(new_constraint)
+        for cs in new_constraints:
+            add_constraint(cs)
+
+    level = Level(open("cookie5.hexcells").read())
     for c in level.all_cells():
         cell_updated(c)
     if DEBUG: level.dump()
@@ -464,6 +486,8 @@ if __name__ == "__main__":
     while queue:
         evaluate()
         arithmetic()
+        if not queue:
+            advanced_arithmetic()
 
     count = level.total_count()
     add_constraint(BasicConstraint({"global"}, level.all_cells(), count, count, level))
@@ -471,6 +495,8 @@ if __name__ == "__main__":
     while queue:
         evaluate()
         arithmetic()
+        if not queue:
+            advanced_arithmetic()
 
     level.dump()
     print "Done:", level.done()
