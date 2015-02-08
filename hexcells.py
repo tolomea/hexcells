@@ -184,6 +184,9 @@ class Level(object):
     def all_cells(self):
         return self._cells.keys()
 
+    def total_count(self):
+        return self._true_count(self.all_cells())
+
     def dump(self, reds=None, blues=None):
         colors = defaultdict(lambda: Back.RESET)
         if blues:
@@ -237,14 +240,15 @@ class ConstraintViolation(Exception):
 
 
 class BasicConstraint(object):
-    def __init__(self, base, cells, count):
-        self.bases = [base]
-        self.cells = cells
+    def __init__(self, bases, cells, count):
+        self.bases = bases
+        self.cells = set(cells)
         self.count = count
+        self.total_count = count
 
     def _normalize(self, level):
         blue = [c for c in self.cells if level.get_color(c) == BLUE]
-        unknown = [c for c in self.cells if level.get_color(c) == UNKNOWN]
+        unknown = {c for c in self.cells if level.get_color(c) == UNKNOWN}
         self.count -= len(blue)
         self.cells = unknown
         if self.count < 0:
@@ -268,12 +272,25 @@ class BasicConstraint(object):
             return {(c, BLACK) for c in self.cells}
         return set()
 
+    def get_inverse_subset_constraint(self, other):
+        """ if other is a subset of us, return the complement of that subset """
+        if other.cells < self.cells:
+            cells = {c for c in self.cells if c not in other.cells}
+            count = self.count - other.count
+            bases = self.bases | other.bases
+            assert count >= 0
+            return BasicConstraint(bases, cells, count)
+        else:
+            return None
+
+    def __str__(self):
+        return "{s.__class__.__name__}({s.bases},{s.total_count})".format(s=self)
+
 
 class DisjointConstraint(BasicConstraint):
-    def __init__(self, base, cells, count, wrap, level):
-        super(DisjointConstraint, self).__init__(base, cells, count)
+    def __init__(self, bases, cells, count, wrap, level):
+        super(DisjointConstraint, self).__init__(bases, cells, count)
         self.wrap = wrap
-        self.total_count = count
         if wrap:
             self.all_cells = cells
         else:
@@ -347,25 +364,25 @@ class DisjointConstraint(BasicConstraint):
 
 
 if __name__ == "__main__":
-    level = Level(open("cookie1.hexcells").read())
-
     queue = set()
     cell_constraints = defaultdict(set)
+    all_constraints = []
+
+    def add_constraint(cs):
+        queue.add(cs)
+        all_constraints.append(cs)
+        for c in cs.cells:
+            cell_constraints[c].add(cs)
 
     def cell_updated(c):
         res = level.get_constrant(c)
         if res:
             cs_type, cells, count, modifier = res
             if modifier == APART:
-                cs = DisjointConstraint(c, cells, count, cs_type==BASIC, level)
+                cs = DisjointConstraint({c}, cells, count, cs_type==BASIC, level)
             else:
-                cs = BasicConstraint(c, cells, count)
-            queue.add(cs)
-            for c in cells:
-                cell_constraints[c].add(cs)
-
-    for c in level.all_cells():
-        cell_updated(c)
+                cs = BasicConstraint({c}, cells, count)
+            add_constraint(cs)
 
     def play(cell, color):
         level.play(cell, color)
@@ -373,6 +390,7 @@ if __name__ == "__main__":
         queue.update(cell_constraints[cell])
 
     def evaluate():
+        print "evaluating"
         while queue:
             cs = queue.pop()
             print cs
@@ -382,5 +400,32 @@ if __name__ == "__main__":
                     play(cell, color)
                 level.dump(cs.bases, [c for c,_ in moves])
 
+    def arithmetic():
+        global all_constraints
+        print "constraint arithmetic"
+        all_constraints = [cs for cs in all_constraints if not cs.done(level)]
+        new_constraints = []
+        for cs1 in all_constraints:
+            for cs2 in all_constraints:
+                new_constraint = cs1.get_inverse_subset_constraint(cs2)
+                if new_constraint:
+                    print "new", new_constraint
+                    new_constraints.append(new_constraint)
+        for cs in new_constraints:
+            add_constraint(cs)
+
+
+    level = Level(open("cookie1.hexcells").read())
+    add_constraint(BasicConstraint(set(), level.all_cells(), level.total_count()))
+    for c in level.all_cells():
+        cell_updated(c)
     level.dump()
+    evaluate()
+    arithmetic()
+    evaluate()
+    arithmetic()
+    evaluate()
+    arithmetic()
+    evaluate()
+    arithmetic()
     evaluate()
