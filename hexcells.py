@@ -116,15 +116,27 @@ class Level(object):
         self.author = lines[2]
         self.custom_text_1 = lines[3]
         self.custom_text_2 = lines[4]
-        self._cells = {}
-        for r, row in enumerate(lines[5:]):
+
+        try:
+            self._cells = self._parse_body(0, lines[5:])
+        except ValueError:
+            self._cells = self._parse_body(1, lines[5:])
+
+    def _parse_body(self, offset, lines):
+        cells = {}
+        for r, row in enumerate(lines):
+            r += offset
             for q, cell in enumerate(zip(row[::2], row[1::2])):
                 if r%2 != q%2:
                     # even_q -> cube -> axial
                     x = q
                     y = r//2 - (q + (q&1)) // 2
                     index = x, y
-                    self._cells[index] = Cell(cell)
+                    cells[index] = Cell(cell)
+                else:
+                    if cell != (".","."):
+                        raise ValueError(cell)
+        return cells
 
     def neighbours(self, cell):
         for c in [
@@ -202,17 +214,16 @@ class Level(object):
                 x = q
                 y = r - (q + (q&1)) // 2
                 s += "  "
-                s += colored(str(self._cells[x, y]), colors[x, y])
+                s += colored(str(self._cells.get((x, y), Cell(".."))), colors[x, y])
             print s
 
-            if r < 16:
-                s = ""
-                for q in range(0,33,2):
-                    x = q
-                    y = r - (q + (q&1)) // 2
-                    s += colored(str(self._cells[x, y]), colors[x, y])
-                    s += "  "
-                print s
+            s = ""
+            for q in range(0,33,2):
+                x = q
+                y = r - (q + (q&1)) // 2
+                s += colored(str(self._cells.get((x, y), Cell(".."))), colors[x, y])
+                s += "  "
+            print s
 
     def get_color(self, c):
         return self._cells[c].color
@@ -415,7 +426,7 @@ if __name__ == "__main__":
             add_constraint(cs)
 
 
-    level = Level(open("cookie1.hexcells").read())
+    level = Level(open("cookie2.hexcells").read())
     add_constraint(BasicConstraint(set(), level.all_cells(), level.total_count()))
     for c in level.all_cells():
         cell_updated(c)
@@ -429,3 +440,10 @@ if __name__ == "__main__":
     evaluate()
     arithmetic()
     evaluate()
+    arithmetic()
+    evaluate()
+    arithmetic()
+    evaluate()
+    arithmetic()
+    evaluate()
+    level.dump()
