@@ -292,8 +292,6 @@ class BasicConstraint(object):
         self.cells = set(cells)
         self.min_count = min_count
         self.max_count = max_count
-        self.orig_min_count = min_count
-        self.orig_max_count = max_count
         self._normalize(level)
 
     def _normalize(self, level):
@@ -348,11 +346,12 @@ class BasicConstraint(object):
         return BasicConstraint(bases, cells, min_count, max_count, level)
 
     def __str__(self):
-        return "{s.__class__.__name__}({s.bases}, {s.orig_min_count}, {s.orig_max_count})".format(s=self)
+        return "{s.__class__.__name__}({s.bases})".format(s=self)
 
 
 class _AdvancedConstraint(BasicConstraint):
     def __init__(self, bases, cells, count, wrap, level):
+        self.orig_count = count
         self.wrap = wrap
         if wrap:
             self.all_cells = cells
@@ -368,7 +367,7 @@ class _AdvancedConstraint(BasicConstraint):
         current_colors = [level.get_color(c) for c in self.all_cells]
         blue_count = sum(1 for x in current_colors if x == BLUE)
         unknown_indicies = [i for i, x in enumerate(current_colors) if x == UNKNOWN]
-        needed = self.orig_min_count - blue_count
+        needed = self.orig_count - blue_count
 
         # try out every blue placement and collect the valid ones
         valid = []
