@@ -12,6 +12,14 @@ Options:
 from __future__ import unicode_literals
 from __future__ import division
 
+"""
+Level credits
+cookie-teamwork - All the early development was against this level
+cookie-the_star - This one necessitated advanced_arithmetic
+darman-tutorial_12 - Currently unsolved
+pteranodonc-rings - Hang
+"""
+
 from collections import defaultdict
 import random
 import time
