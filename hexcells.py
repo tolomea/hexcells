@@ -288,17 +288,19 @@ class ConstraintViolation(Exception):
 
 class BasicConstraint(object):
     def __init__(self, bases, cells, min_count, max_count, level):
-        self.bases = bases
+        self.bases = frozenset(bases)
         self.cells = set(cells)
         self.min_count = min_count
         self.max_count = max_count
         self._normalize(level)
 
     def _normalize(self, level):
+        assert 0 <= self.min_count <= self.max_count
         blue_count = sum(1 for c in self.cells if level.get_color(c) == BLUE)
         unknown = {c for c in self.cells if level.get_color(c) == UNKNOWN}
         self.min_count = max(0, self.min_count - blue_count)
         self.max_count -= blue_count
+        assert 0 <= self.min_count <= self.max_count
         self.cells = unknown
         if self.max_count < self.min_count:
             raise ConstraintViolation()
