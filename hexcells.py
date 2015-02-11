@@ -288,38 +288,66 @@ class ConstraintViolation(Exception):
 
 class BasicConstraint(object):
     def __init__(self, bases, cells, min_count, max_count, level):
-        self.bases = frozenset(bases)
-        self.cells = set(cells)
-        self.min_count = min_count
-        self.max_count = max_count
-        self._normalize(level)
+        if level:
+            cells, min_count, max_count = self._normalize(cells, min_count, max_count, level)
+        self._bases = frozenset(bases)
+        self._cells = set(cells)
+        self._min_count = min_count
+        self._max_count = max_count
 
-    def _normalize(self, level):
-        assert 0 <= self.min_count <= self.max_count
-        blue_count = sum(1 for c in self.cells if level.get_color(c) == BLUE)
-        unknown = {c for c in self.cells if level.get_color(c) == UNKNOWN}
-        self.min_count = max(0, self.min_count - blue_count)
-        self.max_count -= blue_count
-        assert 0 <= self.min_count <= self.max_count
-        self.cells = unknown
-        if self.max_count < self.min_count:
-            raise ConstraintViolation()
-        if self.min_count > len(self.cells):
-            raise ConstraintViolation()
+    @property
+    def bases(self):
+        return self._bases
 
-    def done(self, level):
-        self._normalize(level)
-        return len(self.cells) == 0
+    @property
+    def cells(self):
+        return self._cells
+
+    @property
+    def min_count(self):
+        return self._min_count
+
+    @property
+    def max_count(self):
+        return self._max_count
+
+    @staticmethod
+    def _normalize(cells, min_count, max_count, level):
+        assert 0 <= min_count <= max_count
+        blue_count = sum(1 for c in cells if level.get_color(c) == BLUE)
+        unknown = {c for c in cells if level.get_color(c) == UNKNOWN}
+        min_count = max(0, min_count - blue_count)
+        max_count -= blue_count
+        assert 0 <= min_count <= max_count
+        cells = unknown
+        if max_count < min_count:
+            raise ConstraintViolation()
+        if min_count > len(cells):
+            raise ConstraintViolation()
+        return cells, min_count, max_count
 
     def get_moves(self, level):
-        self._normalize(level)
-        if self.done(level):
-            return set()
-        if self.min_count == len(self.cells):
-            return {(c, BLUE) for c in self.cells}
-        if self.max_count == 0:
-            return {(c, BLACK) for c in self.cells}
-        return set()
+        cells, min_count, max_count = self._normalize(self.cells, self.min_count, self.max_count, level)
+        if len(cells) == 0:
+            return None, set()
+        if min_count == len(cells):
+            return None, {(c, BLUE) for c in cells}
+        if max_count == 0:
+            return None, {(c, BLACK) for c in cells}
+        return BasicConstraint(self.bases, cells, min_count, max_count, None), set()
+
+    @property
+    def _key(self):
+        return frozenset(self.cells), self.min_count, self.max_count
+
+    def __hash__(self):
+        return hash(self._key)
+
+    def __eq__(self, other):
+        return self.__class__ == other.__class__ and self._key == other._key
+
+    def __ne__(self, other):
+        return not(self == other)
 
     def get_inverse_subset_constraint(self, other, level):
         """ if other is a subset of us, return the complement of that subset """
@@ -453,40 +481,40 @@ class JointConstraint(_AdvancedConstraint):
 class Solver(object):
     def __init__(self, level):
         self.queue = set()
+        self.all_constraints = set()
+        self.new_constraints = set()
+
         self.cell_constraints = defaultdict(set)
-        self.all_constraints = {}
         self.level = level
 
         for c in level.all_cells():
             self.cell_updated(c)
 
     def add_constraint(self, cs):
-        key = frozenset(cs.cells)
-        if key in self.all_constraints:
-            orig = self.all_constraints[key]
-            min_count = max(orig.min_count, cs.min_count)
-            max_count = min(orig.max_count, cs.max_count)
-            assert min_count <= max_count
-            orig.min_count = min_count
-            orig.max_count = max_count
-            # TODO should this requeue the constraint?
-        else:
+        if cs not in self.all_constraints:
             if DEBUG > 30: print "new", cs
-            self.all_constraints[key] = cs
+            self.all_constraints.add(cs)
+            self.new_constraints.add(cs)
             self.queue.add(cs)
             for c in cs.cells:
                 self.cell_constraints[c].add(cs)
+
+    def remove_constraint(self, cs):
+        self.all_constraints.discard(cs)
+        self.new_constraints.discard(cs)
+        self.queue.discard(cs)
 
     def cell_updated(self, c):
         res = self.level.get_constrant(c)
         if res:
             cs_type, cells, count, modifier = res
-            if modifier == APART:
-                cs = DisjointConstraint({c}, cells, count, cs_type==BASIC, self.level)
-            elif modifier == TOGETHER:
-                cs = JointConstraint({c}, cells, count, cs_type==BASIC, self.level)
-            else:
-                cs = BasicConstraint({c}, cells, count, count, self.level)
+            # TODO bring back other constraints
+            #if modifier == APART:
+            #    cs = DisjointConstraint({c}, cells, count, cs_type==BASIC, self.level)
+            #elif modifier == TOGETHER:
+            #    cs = JointConstraint({c}, cells, count, cs_type==BASIC, self.level)
+            #else:
+            cs = BasicConstraint({c}, cells, count, count, self.level)
             self.add_constraint(cs)
 
     def play(self, cell, color):
@@ -502,18 +530,21 @@ class Solver(object):
         while self.queue:
             cs = self.queue.pop()
             if DEBUG > 30: print "chk", cs
-            moves = cs.get_moves(self.level)
+            new_cs, moves = cs.get_moves(self.level)
             if moves:
                 for cell, color in moves:
                     self.play(cell, color)
                 if DEBUG > 10: self.level.dump(cs.bases, [c for c,_ in moves])
+            if new_cs != cs:
+                self.remove_constraint(cs)
+                if new_cs is not None:
+                    self.add_constraint(new_cs)
 
     def arithmetic(self):
         if DEBUG > 20: print "constraint arithmetic"
-        self.all_constraints = {frozenset(cs.cells):cs for cs in self.all_constraints.values() if not cs.done(self.level)}
         new_constraints = []
-        for cs1 in self.all_constraints.values():
-            for cs2 in self.all_constraints.values():
+        for cs1 in self.all_constraints:
+            for cs2 in self.all_constraints:
                 new_constraint = cs1.get_inverse_subset_constraint(cs2, self.level)
                 if new_constraint:
                     new_constraints.append(new_constraint)
@@ -523,8 +554,8 @@ class Solver(object):
     def advanced_arithmetic(self):
         if DEBUG > 20: print "advanced arithmetic"
         new_constraints = []
-        for cs1 in self.all_constraints.values():
-            for cs2 in self.all_constraints.values():
+        for cs1 in self.all_constraints:
+            for cs2 in self.all_constraints:
                 new_constraint = cs1.get_intersection(cs2, self.level)
                 if new_constraint:
                     new_constraints.append(new_constraint)
@@ -536,20 +567,20 @@ class Solver(object):
 
         while self.queue:
             self.evaluate()
-            self.arithmetic()
-            if not self.queue:
-                self.advanced_arithmetic()
+        #    self.arithmetic()
+        #    if not self.queue:
+        #        self.advanced_arithmetic()
 
-        # add in the global constraint
-        count = self.level.total_count()
-        cells = self.level.all_cells()
-        self.add_constraint(BasicConstraint({"global"}, cells, count, count, self.level))
-
-        while self.queue:
-            self.evaluate()
-            self.arithmetic()
-            if not self.queue:
-                self.advanced_arithmetic()
+        ## add in the global constraint
+        #count = self.level.total_count()
+        #cells = self.level.all_cells()
+        #self.add_constraint(BasicConstraint({"global"}, cells, count, count, self.level))
+        #
+        #while self.queue:
+        #    self.evaluate()
+        #    self.arithmetic()
+        #    if not self.queue:
+        #        self.advanced_arithmetic()
 
         return level.done
 
