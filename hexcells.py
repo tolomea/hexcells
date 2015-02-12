@@ -574,9 +574,9 @@ class Solver(object):
 
         while self.queue:
             self.evaluate()
-        #    self.arithmetic()
-        #    if not self.queue:
-        #        self.advanced_arithmetic()
+            self.arithmetic()
+            if not self.queue:
+                self.advanced_arithmetic()
 
         # add in the global constraint
         count = self.level.total_count()
@@ -585,9 +585,9 @@ class Solver(object):
 
         while self.queue:
             self.evaluate()
-        #    self.arithmetic()
-        #    if not self.queue:
-        #        self.advanced_arithmetic()
+            self.arithmetic()
+            if not self.queue:
+                self.advanced_arithmetic()
 
         print len(self.all_constraints), len(self.queue)
         return level.done
