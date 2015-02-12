@@ -289,26 +289,11 @@ class ConstraintViolation(Exception):
 class BasicConstraint(object):
     def __init__(self, bases, cells, min_count, max_count, level):
         cells, min_count, max_count = self._normalize(cells, min_count, max_count, level)
-        self._bases = frozenset(bases)
-        self._cells = set(cells)
-        self._min_count = min_count
-        self._max_count = max_count
-
-    @property
-    def bases(self):
-        return self._bases
-
-    @property
-    def cells(self):
-        return self._cells
-
-    @property
-    def min_count(self):
-        return self._min_count
-
-    @property
-    def max_count(self):
-        return self._max_count
+        self.bases = frozenset(bases)
+        self.cells = set(cells)
+        self.min_count = min_count
+        self.max_count = max_count
+        self._key = frozenset(self.cells), self.min_count, self.max_count
 
     @staticmethod
     def _normalize(cells, min_count, max_count, level):
@@ -338,10 +323,6 @@ class BasicConstraint(object):
     def get_reduced(self, level):
         return BasicConstraint(self.bases, self.cells, self.min_count, self.max_count, level)
 
-    @property
-    def _key(self):
-        return frozenset(self.cells), self.min_count, self.max_count
-
     def __hash__(self):
         return hash(self._key)
 
@@ -355,7 +336,7 @@ class BasicConstraint(object):
         """ if other is a subset of us, return the complement of that subset """
         if other.cells < self.cells:
             bases = self.bases | other.bases
-            cells = {c for c in self.cells if c not in other.cells}
+            cells = self.cells - other.cells
             min_count = max(self.min_count - other.max_count, 0)
             max_count = min(self.max_count - other.min_count, len(cells))
             if min_count == 0 and max_count == len(cells):
@@ -488,6 +469,7 @@ class Solver(object):
         self.queue = set()
         self.all_constraints = set()
         self.new_constraints = set()
+        self.old_constraints = set()
 
         self.cell_constraints = defaultdict(set)
         self.level = level
@@ -507,6 +489,7 @@ class Solver(object):
     def remove_constraint(self, cs):
         self.all_constraints.discard(cs)
         self.new_constraints.discard(cs)
+        self.old_constraints.discard(cs)
         self.queue.discard(cs)
         for c in cs.cells:
             self.cell_constraints[c].remove(cs)
@@ -549,23 +532,30 @@ class Solver(object):
 
     def arithmetic(self):
         if DEBUG > 20: print "constraint arithmetic"
-        new_constraints = []
-        for cs1 in self.all_constraints:
-            for cs2 in self.all_constraints:
-                new_constraint = cs1.get_inverse_subset_constraint(cs2, self.level)
-                if new_constraint:
-                    new_constraints.append(new_constraint)
+        new_constraints = set()
+        def inner(a, b):
+            for cs1 in a:
+                for cs2 in b:
+                    new_constraint = cs1.get_inverse_subset_constraint(cs2, self.level)
+                    if new_constraint:
+                        new_constraints.add(new_constraint)
+        inner(self.new_constraints, self.new_constraints)
+        inner(self.old_constraints, self.new_constraints)
+        inner(self.new_constraints, self.old_constraints)
+        self.new_constraints.update(self.old_constraints)
+        self.old_constraints = set()
+
         for cs in new_constraints:
             self.add_constraint(cs)
 
     def advanced_arithmetic(self):
         if DEBUG > 20: print "advanced arithmetic"
-        new_constraints = []
+        new_constraints = set()
         for cs1 in self.all_constraints:
             for cs2 in self.all_constraints:
                 new_constraint = cs1.get_intersection(cs2, self.level)
                 if new_constraint:
-                    new_constraints.append(new_constraint)
+                    new_constraints.add(new_constraint)
         for cs in new_constraints:
             self.add_constraint(cs)
 
