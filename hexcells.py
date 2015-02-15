@@ -470,10 +470,18 @@ class Solver(object):
         self.all_constraints = set()
         self.new_constraints = set()
         self.old_constraints = set()
-
-        self.cell_constraints = defaultdict(set)
         self.level = level
+        self._init_constraints()
 
+    def _clear_constraints(self):
+        if DEBUG > 20: print "clear"
+        self.all_constraints = set()
+        self.new_constraints = set()
+        self.old_constraints = set()
+        self.queue=set()
+
+    def _init_constraints(self):
+        if DEBUG > 20: print "init"
         for c in level.all_cells():
             self.cell_updated(c)
 
@@ -483,16 +491,6 @@ class Solver(object):
             self.all_constraints.add(cs)
             self.new_constraints.add(cs)
             self.queue.add(cs)
-            for c in cs.cells:
-                self.cell_constraints[c].add(cs)
-
-    def remove_constraint(self, cs):
-        self.all_constraints.discard(cs)
-        self.new_constraints.discard(cs)
-        self.old_constraints.discard(cs)
-        self.queue.discard(cs)
-        for c in cs.cells:
-            self.cell_constraints[c].remove(cs)
 
     def cell_updated(self, c):
         res = self.level.get_constrant(c)
@@ -509,13 +507,11 @@ class Solver(object):
     def play(self, cell, color):
         if DEBUG > 20: print "playing", cell, color
         self.level.play(cell, color)
-        self.cell_updated(cell)
-        for cs in self.cell_constraints[cell]:
-            if cell in cs.cells:
-                self.queue.add(cs)
+        self._clear_constraints()
+        self._init_constraints()
 
     def evaluate(self):
-        if DEBUG > 20: print "evaluating"
+        if DEBUG > 20: print "evaluating", len(self.all_constraints), len(self.queue)
         while self.queue:
             cs = self.queue.pop()
             if DEBUG > 30: print "chk", cs
@@ -524,9 +520,7 @@ class Solver(object):
                 for cell, color in moves:
                     self.play(cell, color)
                 if DEBUG > 10: self.level.dump(cs.bases, [c for c,_ in moves])
-                print len(self.all_constraints), len(self.queue)
-            if new_cs != cs:
-                self.remove_constraint(cs)
+            elif new_cs != cs:
                 if new_cs is not None:
                     self.add_constraint(new_cs)
 
@@ -536,9 +530,10 @@ class Solver(object):
         def inner(a, b):
             for cs1 in a:
                 for cs2 in b:
-                    new_constraint = cs1.get_inverse_subset_constraint(cs2, self.level)
-                    if new_constraint:
-                        new_constraints.add(new_constraint)
+                    if cs2.cells < cs1.cells:
+                        new_constraint = cs1.get_inverse_subset_constraint(cs2, self.level)
+                        if new_constraint:
+                            new_constraints.add(new_constraint)
         inner(self.new_constraints, self.new_constraints)
         inner(self.old_constraints, self.new_constraints)
         inner(self.new_constraints, self.old_constraints)
@@ -567,17 +562,12 @@ class Solver(object):
             self.arithmetic()
             if not self.queue:
                 self.advanced_arithmetic()
-
-        # add in the global constraint
-        count = self.level.total_count()
-        cells = self.level.all_cells()
-        self.add_constraint(BasicConstraint({"global"}, cells, count, count, self.level))
-
-        while self.queue:
-            self.evaluate()
-            self.arithmetic()
-            if not self.queue:
-                self.advanced_arithmetic()
+                if not self.queue:
+                    # add in the global constraint
+                    count = self.level.total_count()
+                    cells = self.level.all_cells()
+                    self.add_constraint(BasicConstraint({"global"}, cells, count, count, self.level))
+                    print "global"
 
         print len(self.all_constraints), len(self.queue)
         return level.done
