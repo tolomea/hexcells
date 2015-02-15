@@ -146,35 +146,23 @@ class Level(object):
         self.custom_text_1 = lines[3]
         self.custom_text_2 = lines[4]
 
-        try:
-            self._cells = self._parse_body(0, lines[5:])
-        except ValueError:
-            self._cells = self._parse_body(1, lines[5:])
+        self._cells = self._parse_body(lines[5:])
 
-    def _parse_body(self, offset, lines):
+    def _parse_body(self, lines):
         cells = {}
-        for r, row in enumerate(lines):
-            r += offset
-            for q, cell in enumerate(zip(row[::2], row[1::2])):
-                if r%2 != q%2:
-                    # even_q -> cube -> axial
-                    x = q
-                    y = r//2 - (q + (q&1)) // 2
-                    index = x, y
-                    cells[index] = Cell(cell)
-                else:
-                    if cell != (".","."):
-                        raise ValueError(cell)
+        for y, row in enumerate(lines):
+            for x, cell in enumerate(zip(row[::2], row[1::2])):
+                cells[x, y] = Cell(cell)
         return cells
 
     def neighbours(self, cell):
         for c in [
-            (-1, 0),
-            (-1, 1),
-            (0, 1),
-            (1, 0),
             (1, -1),
-            (0, -1),
+            (0, -2),
+            (-1, -1),
+            (-1, 1),
+            (0, 2),
+            (1, 1),
         ]:
             yield add(cell, c)
 
@@ -182,18 +170,18 @@ class Level(object):
         for c in self.neighbours(cell):
             yield c
         for c in [
-            (-2, 0),
-            (-2, 1),
-            (-2, 2),
-            (-1, 2),
-            (0, 2),
-            (1, 1),
-            (2, 0),
-            (2, -1),
             (2, -2),
-            (1, -2),
-            (0, -2),
-            (-1, -1),
+            (1, -3),
+            (0, -4),
+            (-1, -3),
+            (-2, -2),
+            (-2, 0),
+            (-2, 2),
+            (-1, 3),
+            (0, 4),
+            (1, 3),
+            (2, 2),
+            (2, 0),
         ]:
             yield add(cell, c)
 
@@ -205,13 +193,13 @@ class Level(object):
             yield cell
 
     def vertical(self, cell):
-        return self._line(cell, (0, 1))
+        return self._line(cell, (0, 2))
 
     def left_diag(self, cell):
         return self._line(cell, (-1, 1))
 
     def right_diag(self, cell):
-        return self._line(cell, (1, 0))
+        return self._line(cell, (1, 1))
 
     def get_cells(self, cell, constraint_type):
         return list({
@@ -237,22 +225,10 @@ class Level(object):
             for c in reds:
                 colors[c] = Back.MAGENTA
 
-        for r in range(17):
+        for y in range(33):
             s = ""
-            for q in range(1,33,2):
-                x = q
-                y = r - (q + (q&1)) // 2
-                s += "  "
-                s += colored(str(self._cells.get((x, y), Cell(".."))), colors[x, y])
-                del colors[x, y]
-            print s
-
-            s = ""
-            for q in range(0,33,2):
-                x = q
-                y = r - (q + (q&1)) // 2
-                s += colored(str(self._cells.get((x, y), Cell(".."))), colors[x, y])
-                s += "  "
+            for x in range(33):
+                s += colored(str(self._cells[(x, y)]), colors[x, y])
                 del colors[x, y]
             print s
 
@@ -260,10 +236,10 @@ class Level(object):
             print colored(key, color)
 
     def get_color(self, c):
-        return self._cells[c].color
+        return self._cells.get(c, Cell("..")).color
 
     def get_constrant(self, c):
-        t = self._cells[c].constraint_type
+        t = self._cells.get(c, Cell("..")).constraint_type
         if t is None:
             return None
         cells = self.get_cells(c, t)
@@ -272,7 +248,7 @@ class Level(object):
         return t, cells, count, modifier
 
     def _true_count(self, cells):
-        return sum(self._cells[c].true_value for c in cells)
+        return sum(self._cells.get(c, Cell("..")).true_value for c in cells)
 
     def play(self, c, value):
         self._cells[c].play()
