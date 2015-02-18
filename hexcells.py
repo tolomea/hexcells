@@ -340,6 +340,16 @@ class BasicConstraint(object):
     def __str__(self):
         return "{s.__class__.__name__}({s.bases})".format(s=self)
 
+    def merge(self, other, level):
+        assert self.cells == other.cells
+        min_count = max(self.min_count, other.min_count)
+        max_count = min(self.max_count, other.max_count)
+        if self.min_count == min_count and self.max_count == max_count:
+            return None
+        if other.min_count == min_count and other.max_count == max_count:
+            return other
+        return BasicConstraint(self.bases | other.bases, self.cells, min_count, max_count, level)
+
 
 class _AdvancedConstraint(BasicConstraint):
     def __init__(self, bases, cells, count, wrap, level):
@@ -449,7 +459,7 @@ class Solver(object):
 
     def _init_constraints(self):
         if DEBUG > 20: print "init"
-        self.all_constraints = set()
+        self.all_constraints = dict()
         self.new_constraints = set()
         self.new2 = set()
         self.old_constraints = set()
@@ -469,12 +479,22 @@ class Solver(object):
                     self.add_constraint(cs)
 
     def add_constraint(self, cs):
-        if cs not in self.all_constraints:
-            if DEBUG > 30: print "new", cs
-            self.all_constraints.add(cs)
-            self.new_constraints.add(cs)
-            self.new2.add(cs)
-            self.queue.add(cs)
+        old = self.all_constraints.get(cs.cells)
+        if old is not None:
+            old = self.all_constraints[cs.cells]
+            cs = old.merge(cs, self.level)
+            if cs is None:
+                return
+            self.new_constraints.discard(old)
+            self.new2.discard(old)
+            self.queue.discard(old)
+            self.old2.discard(old)
+            self.old_constraints.discard(old)
+        if DEBUG > 30: print "new", cs
+        self.all_constraints[cs.cells] = cs
+        self.new_constraints.add(cs)
+        self.new2.add(cs)
+        self.queue.add(cs)
 
     def play(self, cell, color):
         if DEBUG > 20: print "playing", cell, color
@@ -550,9 +570,9 @@ class Solver(object):
                     count = self.level.total_count()
                     cells = self.level.all_cells()
                     self.add_constraint(BasicConstraint({"global"}, cells, count, count, self.level))
-                    print "global"
+                    if DEBUG > 20: print "global constraint"
 
-        print len(self.all_constraints), len(self.queue)
+        print len(self.all_constraints)
         return level.done
 
 
