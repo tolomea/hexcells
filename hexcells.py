@@ -265,19 +265,19 @@ class Level(object):
         return all(self._cells[c].done for c in self.all_cells())
 
 
-class ConstraintViolation(Exception):
-    pass
-
-
 class BasicConstraint(object):
-    def __init__(self, bases, cells, min_count, max_count, level):
-        cells, min_count, max_count = self._normalize(cells, min_count, max_count, level)
+    def __init__(self, bases, cells, min_count, max_count):
         self.bases = frozenset(bases)
         self.cells = frozenset(cells)
         self.min_count = min_count
         self.max_count = max_count
         self._key = self.cells, self.min_count, self.max_count
         self.interesting = min_count != 0 or max_count != len(cells)
+
+    @classmethod
+    def make(cls, bases, cells, min_count, max_count, level):
+        cells, min_count, max_count = cls._normalize(cells, min_count, max_count, level)
+        return cls(bases, cells, min_count, max_count)
 
     @staticmethod
     def _normalize(cells, min_count, max_count, level):
@@ -290,13 +290,12 @@ class BasicConstraint(object):
         return cells, min_count, max_count
 
     def get_moves(self, level):
-        cells, min_count, max_count = self._normalize(self.cells, self.min_count, self.max_count, level)
-        if len(cells) == 0:
+        if len(self.cells) == 0:
             return set()
-        if min_count == len(cells):
-            return {(c, BLUE) for c in cells}
-        if max_count == 0:
-            return {(c, BLACK) for c in cells}
+        if self.min_count == len(self.cells):
+            return {(c, BLUE) for c in self.cells}
+        if self.max_count == 0:
+            return {(c, BLACK) for c in self.cells}
         return set()
 
     def __hash__(self):
@@ -308,7 +307,7 @@ class BasicConstraint(object):
     def __ne__(self, other):
         return not(self == other)
 
-    def get_inverse_subset_constraint(self, other, level):
+    def get_inverse_subset_constraint(self, other):
         """ if other is a subset of us, return the complement of that subset """
         if other.cells < self.cells:
             bases = self.bases | other.bases
@@ -318,11 +317,11 @@ class BasicConstraint(object):
             if min_count == 0 and max_count == len(cells):
                 return None
             assert max_count >= min_count
-            return BasicConstraint(bases, cells, min_count, max_count, level)
+            return BasicConstraint(bases, cells, min_count, max_count)
         else:
             return None
 
-    def get_intersection(self, other, level):
+    def get_intersection(self, other):
         cells = self.cells & other.cells
         if not cells or cells == self.cells or cells == other.cells:
             return None
@@ -335,12 +334,12 @@ class BasicConstraint(object):
             return None
         bases = self.bases | other.bases
         assert max_count >= min_count
-        return BasicConstraint(bases, cells, min_count, max_count, level)
+        return BasicConstraint(bases, cells, min_count, max_count)
 
     def __str__(self):
         return "{s.__class__.__name__}({s.bases})".format(s=self)
 
-    def merge(self, other, level):
+    def merge(self, other):
         assert self.cells == other.cells
         min_count = max(self.min_count, other.min_count)
         max_count = min(self.max_count, other.max_count)
@@ -348,7 +347,7 @@ class BasicConstraint(object):
             return None
         if other.min_count == min_count and other.max_count == max_count:
             return other
-        return BasicConstraint(self.bases | other.bases, self.cells, min_count, max_count, level)
+        return BasicConstraint(self.bases | other.bases, self.cells, min_count, max_count)
 
 
 class _AdvancedConstraint(BasicConstraint):
@@ -359,13 +358,14 @@ class _AdvancedConstraint(BasicConstraint):
             self.all_cells = cells
         else:
             self.all_cells = [c for c in cells if level.get_color(c) != EMPTY]
-        super(_AdvancedConstraint, self).__init__(bases, cells, count, count, level)
+
+        cells, min_count, max_count = self._normalize(cells, count, count, level)
+        super(_AdvancedConstraint, self).__init__(bases, cells, min_count, max_count)
         self.interesting = True
 
     def get_moves(self, level):
         moves = super(_AdvancedConstraint, self).get_moves(level)
-        if moves is None:
-            assert False
+        if moves:
             return moves
 
         current_colors = [level.get_color(c) for c in self.all_cells]
@@ -404,8 +404,7 @@ class _AdvancedConstraint(BasicConstraint):
                 valid.append(new_colors)
 
         # collect the results
-        if len(valid) < 1:
-            ConstraintViolation()
+        assert len(valid) >= 1
         valid_colors = [set(x) for x in zip(*valid)]
         for cell, current_color, valid_colors in zip(self.all_cells, current_colors, valid_colors):
             if current_color == UNKNOWN:
@@ -474,7 +473,7 @@ class Solver(object):
                 elif modifier == TOGETHER:
                     cs = JointConstraint({c}, cells, count, cs_type==BASIC, self.level)
                 else:
-                    cs = BasicConstraint({c}, cells, count, count, self.level)
+                    cs = BasicConstraint.make({c}, cells, count, count, self.level)
                 if cs.interesting:
                     self.add_constraint(cs)
 
@@ -482,7 +481,7 @@ class Solver(object):
         old = self.all_constraints.get(cs.cells)
         if old is not None:
             old = self.all_constraints[cs.cells]
-            cs = old.merge(cs, self.level)
+            cs = old.merge(cs)
             if cs is None:
                 return
             self.new_constraints.discard(old)
@@ -513,13 +512,13 @@ class Solver(object):
                 self._init_constraints()
 
     def arithmetic(self):
-        if DEBUG > 20: print "constraint arithmetic"
+        if DEBUG > 20: print "constraint arithmetic", len(self.all_constraints), len(self.new_constraints)
         new_constraints = set()
         def inner(a, b):
             for cs1 in a:
                 for cs2 in b:
                     if cs2.cells < cs1.cells:
-                        new_constraint = cs1.get_inverse_subset_constraint(cs2, self.level)
+                        new_constraint = cs1.get_inverse_subset_constraint(cs2)
                         if new_constraint:
                             new_constraints.add(new_constraint)
         inner(self.new_constraints, self.new_constraints)
@@ -533,19 +532,19 @@ class Solver(object):
             self.add_constraint(cs)
 
     def advanced_arithmetic(self):
-        if DEBUG > 20: print "advanced arithmetic"
+        if DEBUG > 20: print "advanced arithmetic", len(self.all_constraints), len(self.new2)
         new_constraints = set()
         def inner2(a):
             a = list(a)
             for i, cs1 in enumerate(a):
                 for cs2 in a[i:]:
-                    new_constraint = cs1.get_intersection(cs2, self.level)
+                    new_constraint = cs1.get_intersection(cs2)
                     if new_constraint:
                         new_constraints.add(new_constraint)
         def inner(a, b):
             for cs1 in a:
                 for cs2 in b:
-                    new_constraint = cs1.get_intersection(cs2, self.level)
+                    new_constraint = cs1.get_intersection(cs2)
                     if new_constraint:
                         new_constraints.add(new_constraint)
         inner2(self.new2)
@@ -569,7 +568,7 @@ class Solver(object):
                     # add in the global constraint
                     count = self.level.total_count()
                     cells = self.level.all_cells()
-                    self.add_constraint(BasicConstraint({"global"}, cells, count, count, self.level))
+                    self.add_constraint(BasicConstraint.make({"global"}, cells, count, count, self.level))
                     if DEBUG > 20: print "global constraint"
 
         print len(self.all_constraints)
