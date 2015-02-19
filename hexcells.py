@@ -43,7 +43,10 @@ BASIC, AREA, VERTICAL, LEFT_DIAG, RIGHT_DIAG = range(1, 6)
 TOGETHER, APART = range(1, 3)
 
 def colored(text, color):
-    return color + text + Back.RESET
+    if color:
+        return color + text + Back.RESET
+    else:
+        return text
 
 
 def add(a, b):
@@ -219,7 +222,7 @@ class Level(object):
         return self._true_count(self.all_cells())
 
     def dump(self, reds=None, blues=None):
-        colors = defaultdict(lambda: Back.RESET)
+        colors = defaultdict(lambda: None)
         if blues:
             for c in blues:
                 colors[c] = Back.CYAN
@@ -227,15 +230,17 @@ class Level(object):
             for c in reds:
                 colors[c] = Back.MAGENTA
 
+        s = ""
+
         for y in range(33):
-            s = ""
             for x in range(33):
                 s += colored(str(self._cells[(x, y)]), colors[x, y])
                 del colors[x, y]
-            print s
+            s += "\n"
 
         for key, color in colors.iteritems():
-            print colored(key, color)
+            s += colored(key, color) + "\n"
+        print s
 
     def get_color(self, c):
         try:
