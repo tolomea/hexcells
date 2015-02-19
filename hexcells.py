@@ -470,7 +470,7 @@ class Solver(object):
         self.old_constraints = set()
         self.old2 = set()
         self.queue=set()
-        for c in level.all_cells():
+        for c in self.level.all_cells():
             res = self.level.get_constrant(c)
             if res:
                 cs_type, cells, count, modifier = res
@@ -563,7 +563,7 @@ class Solver(object):
             self.add_constraint(cs)
 
     def solve(self):
-        if DEBUG > 10: level.dump()
+        if DEBUG > 10: self.level.dump()
 
         while self.queue:
             self.evaluate()
@@ -577,11 +577,11 @@ class Solver(object):
                     self.add_constraint(BasicConstraint.make({"global"}, cells, count, count, self.level))
                     if DEBUG > 20: print "global constraint"
 
-        return level.done
+        return self.level.done
 
 
-
-if __name__ == "__main__":
+def main():
+    global DEBUG
     try:
         arguments = docopt.docopt(__doc__)
     except docopt.DocoptExit:
@@ -606,3 +606,6 @@ if __name__ == "__main__":
 
         if not level.done():
             sys.exit(1)
+
+if __name__ == "__main__":
+    main()
