@@ -2,11 +2,12 @@
 Hexcells Solver
 
 Usage:
-  hexcells.py HEXCELLS_FILE [--debug=LEVEL]
+  hexcells.py [--debug=LEVEL] [--show-moves] HEXCELLS_FILES...
 
 Options:
   -h --help        Show this screen.
-  --debug=LEVEL  Debug print level [default: 10]
+  --debug=LEVEL    Debug print level [default: 10]
+  --show-moves     Show moves made during solving (synonym for --debug=15)
 """
 
 from __future__ import unicode_literals
@@ -14,18 +15,18 @@ from __future__ import division
 
 """
 Level credits
+alpha-first_hexcells_test - Invaluable for basic debug and testing
 cookie-teamwork - All the early development was against this level
 cookie-the_star - This one necessitated advanced_arithmetic
-darman-tutorial_12 - Currently unsolved
-pteranodonc-rings - Hang
 """
 
 from collections import defaultdict
 import random
 import time
 import itertools
+import sys
 
-from docopt import docopt
+import docopt
 from cached_property import cached_property
 from colorama import init, Back
 init()
@@ -571,28 +572,32 @@ class Solver(object):
                     self.add_constraint(BasicConstraint.make({"global"}, cells, count, count, self.level))
                     if DEBUG > 20: print "global constraint"
 
-        print len(self.all_constraints)
         return level.done
 
 
 
 if __name__ == "__main__":
-    arguments = docopt(__doc__)
-    DEBUG = int(arguments["--debug"])
-
-    fname = arguments["HEXCELLS_FILE"]
-
-
-    level = Level(open(fname).read())
-
-    start = time.time()
-
-    Solver(level).solve()
-
-    print time.time() - start
-
-    level.dump()
-    print "Done:", level.done()
-
-    if not level.done:
+    try:
+        arguments = docopt.docopt(__doc__)
+    except docopt.DocoptExit:
+        print __doc__
         sys.exit(1)
+    DEBUG = int(arguments["--debug"])
+    if arguments.get("--show-moves"):
+        DEBUG = 15
+
+    for fname in arguments["HEXCELLS_FILES"]:
+        level = Level(open(fname).read())
+
+        start = time.time()
+
+        Solver(level).solve()
+
+
+        level.dump()
+        print "File:", fname
+        print "Done:", level.done()
+        print "Time:", time.time() - start
+
+        if not level.done():
+            sys.exit(1)
