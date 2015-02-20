@@ -270,7 +270,7 @@ class Level(object):
         return all(self._cells[c].done for c in self.all_cells())
 
 
-class BasicConstraint(object):
+class Constraint(object):
     def __init__(self, bases, cells, min_count, max_count, indicies=None, patterns=None):
         self.bases = frozenset(bases)
         self.cells = frozenset(cells)
@@ -331,7 +331,7 @@ class BasicConstraint(object):
             if min_count == 0 and max_count == len(cells):
                 return None
             assert max_count >= min_count
-            return BasicConstraint(bases, cells, min_count, max_count)
+            return Constraint(bases, cells, min_count, max_count)
         else:
             return None
 
@@ -348,7 +348,7 @@ class BasicConstraint(object):
             return None
         bases = self.bases | other.bases
         assert max_count >= min_count
-        return BasicConstraint(bases, cells, min_count, max_count)
+        return Constraint(bases, cells, min_count, max_count)
 
     def __str__(self):
         return "{s.__class__.__name__}({s.bases})".format(s=self)
@@ -361,11 +361,11 @@ class BasicConstraint(object):
             return None
         if other.min_count == min_count and other.max_count == max_count:
             return other
-        return BasicConstraint(self.bases | other.bases, self.cells, min_count, max_count)
+        return Constraint(self.bases | other.bases, self.cells, min_count, max_count)
 
 
 def basic(base, cells, count, level):
-    cs = BasicConstraint.make({base}, cells, count, count, level)
+    cs = Constraint.make({base}, cells, count, count, level)
     moves = cs.get_moves(level)
     if moves:
         return moves, cs
@@ -439,7 +439,7 @@ def disjoint(base, cells, count, loop, level):
         return False
 
     indicies, valid = eval_modifier(cells, count, is_valid, loop, level)
-    cs = BasicConstraint.make({base}, cells, count, count, level, indicies, valid)
+    cs = Constraint.make({base}, cells, count, count, level, indicies, valid)
     moves = cs.get_moves(level)
     if moves:
         return moves, cs
@@ -464,7 +464,7 @@ def joint(base, cells, count, loop, level):
         return True
 
     indicies, valid = eval_modifier(cells, count, is_valid, loop, level)
-    cs = BasicConstraint.make({base}, cells, count, count, level, indicies, valid)
+    cs = Constraint.make({base}, cells, count, count, level, indicies, valid)
     moves = cs.get_moves(level)
     if moves:
         return moves, cs
