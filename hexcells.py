@@ -376,15 +376,19 @@ def eval_modifier(cells, count, is_valid, wrap, level):
 
     # try out every blue placement and collect the valid ones
     valid = []
+    valid2 = set()
     for indicies in itertools.combinations(unknown_indicies, needed):
         indicies = set(indicies)
         new_colors = []
+        new_colors2 = []
         for i, c in enumerate(current_colors):
             if c == UNKNOWN:
                 if i in indicies:
                     new_colors.append(BLUE)
+                    new_colors2.append(BLUE)
                 else:
                     new_colors.append(BLACK)
+                    new_colors2.append(BLACK)
             else:
                 new_colors.append(c)
 
@@ -403,6 +407,7 @@ def eval_modifier(cells, count, is_valid, wrap, level):
         # check that this is a valid sequence
         if is_valid(wrapped):
             valid.append(new_colors)
+            valid2.add(tuple(new_colors2))
 
     # collect the results
     moves = set()
@@ -415,7 +420,12 @@ def eval_modifier(cells, count, is_valid, wrap, level):
         else:
             assert {current_color} == valid_colors
 
-    return moves
+    indicies = []
+    for i in enumerate(current_colors):
+        if c == UNKNOWN:
+            indicies.append(c)
+
+    return moves, indicies, valid2
 
 def disjoint(base, cells, count, loop, level):
     def is_valid(new_colors):
@@ -434,7 +444,7 @@ def disjoint(base, cells, count, loop, level):
 
     cs = BasicConstraint.make({base}, cells, count, count, level)
 
-    moves = eval_modifier(cells, count, is_valid, loop, level)
+    moves, indicies, valid = eval_modifier(cells, count, is_valid, loop, level)
     if moves:
         return moves, cs
 
@@ -463,7 +473,7 @@ def joint(base, cells, count, loop, level):
 
     cs = BasicConstraint.make({base}, cells, count, count, level)
 
-    moves = eval_modifier(cells, count, is_valid, loop, level)
+    moves, indicies, valid = eval_modifier(cells, count, is_valid, loop, level)
     if moves:
         return moves, cs
 
