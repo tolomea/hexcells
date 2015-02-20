@@ -355,77 +355,70 @@ class BasicConstraint(object):
         return BasicConstraint(self.bases | other.bases, self.cells, min_count, max_count)
 
 
-class _AdvancedConstraint(BasicConstraint):
-    def __init__(self, bases, cells, count, wrap, level):
-        self.orig_count = count
-        self.wrap = wrap
-        if wrap:
-            self.all_cells = cells
-        else:
-            self.all_cells = [c for c in cells if level.get_color(c) != EMPTY]
+def basic(base, cells, count, level):
+    cs = BasicConstraint.make({base}, cells, count, count, level)
+    moves = cs.get_moves(level)
+    if moves:
+        return moves, cs
+    if cs.interesting:
+        return None, cs
+    return None, None
 
-        cells, min_count, max_count = self._normalize(cells, count, count, level)
-        super(_AdvancedConstraint, self).__init__(bases, cells, min_count, max_count)
-        self.interesting = True
 
-    def get_moves(self, level):
-        moves = super(_AdvancedConstraint, self).get_moves(level)
-        if moves:
-            return moves
+def eval_modifier(cells, count, is_valid, wrap, level):
+    if not wrap:
+        cells = [c for c in cells if level.get_color(c) != EMPTY]
 
-        current_colors = [level.get_color(c) for c in self.all_cells]
-        blue_count = sum(1 for x in current_colors if x == BLUE)
-        unknown_indicies = [i for i, x in enumerate(current_colors) if x == UNKNOWN]
-        needed = self.orig_count - blue_count
+    current_colors = [level.get_color(c) for c in cells]
+    blue_count = sum(1 for x in current_colors if x == BLUE)
+    unknown_indicies = [i for i, x in enumerate(current_colors) if x == UNKNOWN]
+    needed = count - blue_count
 
-        # try out every blue placement and collect the valid ones
-        valid = []
-        for indicies in itertools.combinations(unknown_indicies, needed):
-            indicies = set(indicies)
-            new_colors = []
-            for i, c in enumerate(current_colors):
-                if c == UNKNOWN:
-                    if i in indicies:
-                        new_colors.append(BLUE)
-                    else:
-                        new_colors.append(BLACK)
+    # try out every blue placement and collect the valid ones
+    valid = []
+    for indicies in itertools.combinations(unknown_indicies, needed):
+        indicies = set(indicies)
+        new_colors = []
+        for i, c in enumerate(current_colors):
+            if c == UNKNOWN:
+                if i in indicies:
+                    new_colors.append(BLUE)
                 else:
-                    new_colors.append(c)
-
-            # handle wrapping by moving blues from the start to the end
-            if self.wrap:
-                cnt = 0
-                for c in new_colors:
-                    if c == BLUE:
-                        cnt += 1
-                    else:
-                        break
-                wrapped = new_colors[cnt:] + new_colors[:cnt]
+                    new_colors.append(BLACK)
             else:
-                wrapped = new_colors
+                new_colors.append(c)
 
-            # check that this is a valid sequence
-            if self._is_valid(wrapped):
-                valid.append(new_colors)
+        # handle wrapping by moving blues from the start to the end
+        if wrap:
+            cnt = 0
+            for c in new_colors:
+                if c == BLUE:
+                    cnt += 1
+                else:
+                    break
+            wrapped = new_colors[cnt:] + new_colors[:cnt]
+        else:
+            wrapped = new_colors
 
-        # collect the results
-        assert len(valid) >= 1
-        valid_colors = [set(x) for x in zip(*valid)]
-        for cell, current_color, valid_colors in zip(self.all_cells, current_colors, valid_colors):
-            if current_color == UNKNOWN:
-                if len(valid_colors) == 1:
-                    moves.add((cell, valid_colors.pop()))
-            else:
-                assert {current_color} == valid_colors
+        # check that this is a valid sequence
+        if is_valid(wrapped):
+            valid.append(new_colors)
 
-        return moves
+    # collect the results
+    moves = set()
+    assert len(valid) >= 1
+    valid_colors = [set(x) for x in zip(*valid)]
+    for cell, current_color, valid_colors in zip(cells, current_colors, valid_colors):
+        if current_color == UNKNOWN:
+            if len(valid_colors) == 1:
+                moves.add((cell, valid_colors.pop()))
+        else:
+            assert {current_color} == valid_colors
 
-    def _is_valid(self, new_colors):
-        raise NotImplemented()
+    return moves
 
-
-class DisjointConstraint(_AdvancedConstraint):
-    def _is_valid(self, new_colors):
+def disjoint(base, cells, count, loop, level):
+    def is_valid(new_colors):
         state = 0
         for c in new_colors:
             if state == 0:  # looking for blues
@@ -439,9 +432,22 @@ class DisjointConstraint(_AdvancedConstraint):
                     return True
         return False
 
+    cs = BasicConstraint.make({base}, cells, count, count, level)
 
-class JointConstraint(_AdvancedConstraint):
-    def _is_valid(self, new_colors):
+    moves = eval_modifier(cells, count, is_valid, loop, level)
+    if moves:
+        return moves, cs
+
+    moves = cs.get_moves(level)
+    if moves:
+        return moves, cs
+    if cs.interesting:
+        return None, cs
+    return None, None
+
+
+def joint(base, cells, count, loop, level):
+    def is_valid(new_colors):
         state = 0
         for c in new_colors:
             if state == 0:  # looking for blues
@@ -455,29 +461,12 @@ class JointConstraint(_AdvancedConstraint):
                     return False
         return True
 
-
-def basic(base, cells, count, level):
     cs = BasicConstraint.make({base}, cells, count, count, level)
-    moves = cs.get_moves(level)
+
+    moves = eval_modifier(cells, count, is_valid, loop, level)
     if moves:
         return moves, cs
-    if cs.interesting:
-        return None, cs
-    return None, None
 
-
-def disjoint(base, cells, count, loop, level):
-    cs = DisjointConstraint({base}, cells, count, loop, level)
-    moves = cs.get_moves(level)
-    if moves:
-        return moves, cs
-    if cs.interesting:
-        return None, cs
-    return None, None
-
-
-def joint(base, cells, count, loop, level):
-    cs = JointConstraint({base}, cells, count, loop, level)
     moves = cs.get_moves(level)
     if moves:
         return moves, cs
