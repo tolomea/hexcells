@@ -271,18 +271,20 @@ class Level(object):
 
 
 class BasicConstraint(object):
-    def __init__(self, bases, cells, min_count, max_count):
+    def __init__(self, bases, cells, min_count, max_count, indicies=None, patterns=None):
         self.bases = frozenset(bases)
         self.cells = frozenset(cells)
         self.min_count = min_count
         self.max_count = max_count
         self._key = self.cells, self.min_count, self.max_count
         self.interesting = min_count != 0 or max_count != len(cells)
+        self.indicies = indicies
+        self.patterns = patterns
 
     @classmethod
-    def make(cls, bases, cells, min_count, max_count, level):
+    def make(cls, bases, cells, min_count, max_count, level, indicies=None, patterns=None):
         cells, min_count, max_count = cls._normalize(cells, min_count, max_count, level)
-        return cls(bases, cells, min_count, max_count)
+        return cls(bases, cells, min_count, max_count, indicies, patterns)
 
     @staticmethod
     def _normalize(cells, min_count, max_count, level):
@@ -301,6 +303,13 @@ class BasicConstraint(object):
             return {(c, BLUE) for c in self.cells}
         if self.max_count == 0:
             return {(c, BLACK) for c in self.cells}
+        if self.patterns:
+            moves = set()
+            t_patterns = zip(*self.patterns)
+            for c, values in zip(self.indicies, t_patterns):
+                if len(set(values)) == 1:
+                    moves.add((c, values[0]))
+            return moves
         return set()
 
     def __hash__(self):
@@ -375,8 +384,7 @@ def eval_modifier(cells, count, is_valid, wrap, level):
     needed = count - blue_count
 
     # try out every blue placement and collect the valid ones
-    valid = []
-    valid2 = set()
+    valid = set()
     for indicies in itertools.combinations(unknown_indicies, needed):
         indicies = set(indicies)
         new_colors = []
@@ -406,26 +414,14 @@ def eval_modifier(cells, count, is_valid, wrap, level):
 
         # check that this is a valid sequence
         if is_valid(wrapped):
-            valid.append(new_colors)
-            valid2.add(tuple(new_colors2))
-
-    # collect the results
-    moves = set()
-    assert len(valid) >= 1
-    valid_colors = [set(x) for x in zip(*valid)]
-    for cell, current_color, valid_colors in zip(cells, current_colors, valid_colors):
-        if current_color == UNKNOWN:
-            if len(valid_colors) == 1:
-                moves.add((cell, valid_colors.pop()))
-        else:
-            assert {current_color} == valid_colors
+            valid.add(tuple(new_colors2))
 
     indicies = []
-    for i in enumerate(current_colors):
-        if c == UNKNOWN:
+    for c, v in zip(cells, current_colors):
+        if v == UNKNOWN:
             indicies.append(c)
 
-    return moves, indicies, valid2
+    return indicies, valid
 
 def disjoint(base, cells, count, loop, level):
     def is_valid(new_colors):
@@ -442,12 +438,8 @@ def disjoint(base, cells, count, loop, level):
                     return True
         return False
 
-    cs = BasicConstraint.make({base}, cells, count, count, level)
-
-    moves, indicies, valid = eval_modifier(cells, count, is_valid, loop, level)
-    if moves:
-        return moves, cs
-
+    indicies, valid = eval_modifier(cells, count, is_valid, loop, level)
+    cs = BasicConstraint.make({base}, cells, count, count, level, indicies, valid)
     moves = cs.get_moves(level)
     if moves:
         return moves, cs
@@ -471,12 +463,8 @@ def joint(base, cells, count, loop, level):
                     return False
         return True
 
-    cs = BasicConstraint.make({base}, cells, count, count, level)
-
-    moves, indicies, valid = eval_modifier(cells, count, is_valid, loop, level)
-    if moves:
-        return moves, cs
-
+    indicies, valid = eval_modifier(cells, count, is_valid, loop, level)
+    cs = BasicConstraint.make({base}, cells, count, count, level, indicies, valid)
     moves = cs.get_moves(level)
     if moves:
         return moves, cs
