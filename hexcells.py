@@ -78,7 +78,7 @@ class Cell(object):
         else:
             assert False
 
-    @cached_property
+    @property
     def constraint_type(self):
         if self._parts[1] == '.':
             return None
@@ -117,7 +117,6 @@ class Cell(object):
         assert self._parts[0] in 'ox'
         self._parts = self._parts[0].upper() + self._parts[1]
         del self.color
-        del self.constraint_type
 
     @property
     def done(self):
@@ -457,31 +456,85 @@ class JointConstraint(_AdvancedConstraint):
         return True
 
 
+def basic(base, cells, count, level):
+    cs = BasicConstraint.make({base}, cells, count, count, level)
+    moves = cs.get_moves(level)
+    if moves:
+        return moves, cs
+    if cs.interesting:
+        return None, cs
+    return None, None
+
+
+def disjoint(base, cells, count, loop, level):
+    cs = DisjointConstraint({base}, cells, count, loop, level)
+    moves = cs.get_moves(level)
+    if moves:
+        return moves, cs
+    if cs.interesting:
+        return None, cs
+    return None, None
+
+
+def joint(base, cells, count, loop, level):
+    cs = JointConstraint({base}, cells, count, loop, level)
+    moves = cs.get_moves(level)
+    if moves:
+        return moves, cs
+    if cs.interesting:
+        return None, cs
+    return None, None
+
+
+def subset(cs1, cs2, level):
+    cs = cs1.get_inverse_subset_constraint(cs2)
+    if cs:
+        moves = cs.get_moves(level)
+        if moves:
+            return moves, cs
+        if cs.interesting:
+            return None, cs
+    return None, None
+
+
+def intersection(cs1, cs2, level):
+    cs = cs1.get_intersection(cs2)
+    if cs:
+        moves = cs.get_moves(level)
+        if moves:
+            return moves, cs
+        if cs.interesting:
+            return None, cs
+    return None, None
+
+
 class Solver(object):
     def __init__(self, level):
         self.level = level
-        self._init_constraints()
 
-    def _init_constraints(self):
+    def evaluate(self):
         if DEBUG > 20: print "init"
         self.all_constraints = dict()
         self.new_constraints = set()
         self.new2 = set()
         self.old_constraints = set()
         self.old2 = set()
-        self.queue=set()
+        self.new_stuff = True
         for c in self.level.all_cells():
             res = self.level.get_constrant(c)
             if res:
                 cs_type, cells, count, modifier = res
                 if modifier == APART:
-                    cs = DisjointConstraint({c}, cells, count, cs_type==BASIC, self.level)
+                    moves, cs = disjoint(c, cells, count, cs_type==BASIC, self.level)
                 elif modifier == TOGETHER:
-                    cs = JointConstraint({c}, cells, count, cs_type==BASIC, self.level)
+                    moves, cs = joint(c, cells, count, cs_type==BASIC, self.level)
                 else:
-                    cs = BasicConstraint.make({c}, cells, count, count, self.level)
-                if cs.interesting:
+                    moves, cs = basic(c, cells, count, self.level)
+                if moves:
+                    return moves, cs
+                if cs:
                     self.add_constraint(cs)
+        return None, None
 
     def add_constraint(self, cs):
         old = self.all_constraints.get(cs.cells)
@@ -492,30 +545,17 @@ class Solver(object):
                 return
             self.new_constraints.discard(old)
             self.new2.discard(old)
-            self.queue.discard(old)
             self.old2.discard(old)
             self.old_constraints.discard(old)
         if DEBUG > 30: print "new", cs
         self.all_constraints[cs.cells] = cs
         self.new_constraints.add(cs)
         self.new2.add(cs)
-        self.queue.add(cs)
+        self.new_stuff = True
 
     def play(self, cell, color):
         if DEBUG > 20: print "playing", cell, color
         self.level.play(cell, color)
-
-    def evaluate(self):
-        if DEBUG > 20: print "evaluating", len(self.all_constraints), len(self.queue)
-        while self.queue:
-            cs = self.queue.pop()
-            if DEBUG > 30: print "chk", cs
-            moves = cs.get_moves(self.level)
-            if moves:
-                for cell, color in moves:
-                    self.play(cell, color)
-                if DEBUG > 10: self.level.dump(cs.bases, [c for c,_ in moves])
-                self._init_constraints()
 
     def arithmetic(self):
         if DEBUG > 20: print "constraint arithmetic", len(self.all_constraints), len(self.new_constraints)
@@ -524,18 +564,28 @@ class Solver(object):
             for cs1 in a:
                 for cs2 in b:
                     if cs2.cells < cs1.cells:
-                        new_constraint = cs1.get_inverse_subset_constraint(cs2)
-                        if new_constraint:
-                            new_constraints.add(new_constraint)
-        inner(self.new_constraints, self.new_constraints)
-        inner(self.old_constraints, self.new_constraints)
-        inner(self.new_constraints, self.old_constraints)
+                        moves, cs = subset(cs1, cs2, self.level)
+                        if moves:
+                            return moves, cs
+                        if cs:
+                            new_constraints.add(cs)
+            return None, None
+        moves, cs = inner(self.new_constraints, self.new_constraints)
+        if moves:
+            return moves, cs
+        moves, cs = inner(self.old_constraints, self.new_constraints)
+        if moves:
+            return moves, cs
+        moves, cs = inner(self.new_constraints, self.old_constraints)
+        if moves:
+            return moves, cs
 
         self.old_constraints.update(self.new_constraints)
         self.new_constraints = set()
 
         for cs in new_constraints:
             self.add_constraint(cs)
+        return None, None
 
     def advanced_arithmetic(self):
         if DEBUG > 20: print "advanced arithmetic", len(self.all_constraints), len(self.new2)
@@ -544,40 +594,74 @@ class Solver(object):
             a = list(a)
             for i, cs1 in enumerate(a):
                 for cs2 in a[i:]:
-                    new_constraint = cs1.get_intersection(cs2)
-                    if new_constraint:
-                        new_constraints.add(new_constraint)
+                    moves, cs = intersection(cs1, cs2, self.level)
+                    if moves:
+                        return moves, cs
+                    if cs:
+                        new_constraints.add(cs)
+            return None, None
         def inner(a, b):
             for cs1 in a:
                 for cs2 in b:
-                    new_constraint = cs1.get_intersection(cs2)
-                    if new_constraint:
-                        new_constraints.add(new_constraint)
-        inner2(self.new2)
-        inner(self.new2, self.old2)
+                    moves, cs = intersection(cs1, cs2, self.level)
+                    if moves:
+                        return moves, cs
+                    if cs:
+                        new_constraints.add(cs)
+            return None, None
+        moves, cs = inner2(self.new2)
+        if moves:
+            return moves, cs
+        moves, cs = inner(self.new2, self.old2)
+        if moves:
+            return moves, cs
 
         self.old2.update(self.new2)
         self.new2 = set()
 
         for cs in new_constraints:
             self.add_constraint(cs)
+        return None, None
 
-    def solve(self):
+    def _solve(self):
         if DEBUG > 10: self.level.dump()
 
-        while self.queue:
-            self.evaluate()
-            self.arithmetic()
-            if not self.queue:
-                self.advanced_arithmetic()
-                if not self.queue:
-                    # add in the global constraint
-                    count = self.level.total_count()
-                    cells = self.level.all_cells()
-                    self.add_constraint(BasicConstraint.make({"global"}, cells, count, count, self.level))
-                    if DEBUG > 20: print "global constraint"
+        moves, cs = self.evaluate()
+        if moves:
+            return moves, cs
 
-        return self.level.done
+        while self.new_stuff:
+            self.new_stuff = False
+            moves, cs = self.arithmetic()
+            if moves:
+                return moves, cs
+
+            if not self.new_stuff:
+                moves, cs = self.advanced_arithmetic()
+                if moves:
+                    return moves, cs
+
+            if not self.new_stuff:
+                # add in the global constraint
+                count = self.level.total_count()
+                cells = self.level.all_cells()
+                moves, cs = basic("global", cells, count, self.level)
+                if moves:
+                    return moves, cs
+                if cs:
+                    self.add_constraint(cs)
+                if DEBUG > 20: print "global constraint"
+
+        return None, None
+
+    def solve(self):
+        while True:
+            moves, cs = self._solve()
+            if not moves:
+                return self.level.done
+            for cell, color in moves:
+                self.play(cell, color)
+            if DEBUG > 10: self.level.dump(cs.bases, [c for c,_ in moves])
 
 
 def main():
