@@ -507,10 +507,10 @@ class Solver(object):
     def evaluate(self):
         if DEBUG > 20: print "evaluate"
         self.all_constraints = dict()
-        self.new_constraints = set()
-        self.new2 = set()
-        self.old_constraints = set()
-        self.old2 = set()
+        self.arith_new = set()
+        self.adv_new = set()
+        self.arith_old = set()
+        self.adv_old = set()
         self.new_stuff = True
         for c in self.level.all_cells():
             res = self.level.get_constrant(c)
@@ -535,14 +535,14 @@ class Solver(object):
             cs = old.merge(cs)
             if cs is None:
                 return
-            self.new_constraints.discard(old)
-            self.new2.discard(old)
-            self.old2.discard(old)
-            self.old_constraints.discard(old)
+            self.arith_new.discard(old)
+            self.adv_new.discard(old)
+            self.adv_old.discard(old)
+            self.arith_old.discard(old)
         if DEBUG > 30: print "new", cs
         self.all_constraints[cs.cells] = cs
-        self.new_constraints.add(cs)
-        self.new2.add(cs)
+        self.arith_new.add(cs)
+        self.adv_new.add(cs)
         self.new_stuff = True
 
     def play(self, cell, color):
@@ -550,7 +550,7 @@ class Solver(object):
         self.level.play(cell, color)
 
     def arithmetic(self):
-        if DEBUG > 20: print "constraint arithmetic", len(self.all_constraints), len(self.new_constraints)
+        if DEBUG > 20: print "constraint arithmetic", len(self.all_constraints), len(self.arith_new)
         new_constraints = set()
         def inner(a, b):
             for cs1 in a:
@@ -562,25 +562,25 @@ class Solver(object):
                         if cs:
                             new_constraints.add(cs)
             return None, None
-        moves, cs = inner(self.new_constraints, self.new_constraints)
+        moves, cs = inner(self.arith_new, self.arith_new)
         if moves:
             return moves, cs
-        moves, cs = inner(self.old_constraints, self.new_constraints)
+        moves, cs = inner(self.arith_old, self.arith_new)
         if moves:
             return moves, cs
-        moves, cs = inner(self.new_constraints, self.old_constraints)
+        moves, cs = inner(self.arith_new, self.arith_old)
         if moves:
             return moves, cs
 
-        self.old_constraints.update(self.new_constraints)
-        self.new_constraints = set()
+        self.arith_old.update(self.arith_new)
+        self.arith_new = set()
 
         for cs in new_constraints:
             self.add_constraint(cs)
         return None, None
 
     def advanced_arithmetic(self):
-        if DEBUG > 20: print "advanced arithmetic", len(self.all_constraints), len(self.new2)
+        if DEBUG > 20: print "advanced arithmetic", len(self.all_constraints), len(self.adv_new)
         new_constraints = set()
         def inner2(a):
             a = list(a)
@@ -601,15 +601,15 @@ class Solver(object):
                     if cs:
                         new_constraints.add(cs)
             return None, None
-        moves, cs = inner2(self.new2)
+        moves, cs = inner2(self.adv_new)
         if moves:
             return moves, cs
-        moves, cs = inner(self.new2, self.old2)
+        moves, cs = inner(self.adv_new, self.adv_old)
         if moves:
             return moves, cs
 
-        self.old2.update(self.new2)
-        self.new2 = set()
+        self.adv_old.update(self.adv_new)
+        self.adv_new = set()
 
         for cs in new_constraints:
             self.add_constraint(cs)
