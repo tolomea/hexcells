@@ -274,6 +274,35 @@ def transpose(matrix):
     return zip(*matrix)
 
 
+def cut_patterns(indicies, patterns, new_cells):
+    res_i = []
+    res_v = []
+    for i, v in zip(indicies, transpose(patterns)):
+        if i in new_cells:
+            res_i.append(i)
+            res_v.append(v)
+    return res_i, transpose(res_v)
+
+
+def intersect_patterns(p1, p2):
+    p1 = set(p1)
+    p2 = set(p2)
+    return p1 & p2
+
+
+def limit_patterns(patterns, min_count, max_count):
+    new_min = 1000
+    new_max = 0
+    res = []
+    for v in patterns:
+        c = sum(x==BLUE for x in v)
+        if min_count <= c <= max_count:
+            res.append(v)
+            new_min = min(c, new_min)
+            new_max = max(c, new_max)
+    return res, new_min, new_max
+
+
 class Constraint(object):
     def __init__(self, bases, cells, min_count, max_count, debug, indicies=None, patterns=None):
         self.bases = frozenset(bases)
@@ -333,29 +362,49 @@ class Constraint(object):
             cells = self.cells - other.cells
             min_count = max(self.min_count - other.max_count, 0)
             max_count = min(self.max_count - other.min_count, len(cells))
-            if min_count == 0 and max_count == len(cells):
-                return None
             assert max_count >= min_count
             debug = "({0}-{1})".format(self.debug, other.debug)
-            return Constraint(bases, cells, min_count, max_count, debug)
+
+            if self.patterns:
+                indicies, patterns = cut_patterns(self.indicies, self.patterns, cells)
+                patterns, min_count, max_count = limit_patterns(patterns, min_count, max_count)
+            else:
+                indicies = None
+                patterns = None
+
+            return Constraint(bases, cells, min_count, max_count, debug, indicies=indicies, patterns=patterns)
         else:
             return None
 
     def get_intersection(self, other):
         cells = self.cells & other.cells
-        if not cells or cells == self.cells or cells == other.cells:
+        if not cells:
             return None
         len_cells = len(cells)
         self_rem = len(self.cells) - len_cells
         other_rem = len(other.cells) - len_cells
         min_count = max(self.min_count - self_rem, other.min_count - other_rem, 0)
         max_count = min(self.max_count, other.max_count, len_cells)
-        if min_count == 0 and max_count == len_cells:
-            return None
         bases = self.bases | other.bases
         assert max_count >= min_count
         debug = "({0}&{1})".format(self.debug, other.debug)
-        return Constraint(bases, cells, min_count, max_count, debug)
+
+        if self.patterns:
+            indicies, patterns = cut_patterns(self.indicies, self.patterns, cells)
+            if other.patterns:
+                indicies2, patterns2 = cut_patterns(other.indicies, other.patterns, cells)
+                assert indicies == indicies2
+                patterns = intersect_patterns(patterns, patterns2)
+            patterns, min_count, max_count = limit_patterns(patterns, min_count, max_count)
+        else:
+            if other.patterns:
+                indicies, patterns = cut_patterns(other.indicies, other.patterns, cells)
+                patterns, min_count, max_count = limit_patterns(patterns, min_count, max_count)
+            else:
+                indicies = None
+                patterns = None
+
+        return Constraint(bases, cells, min_count, max_count, debug, indicies=indicies, patterns=patterns)
 
     def get_union(self, other):
         if self.cells & other.cells:
@@ -380,7 +429,23 @@ class Constraint(object):
         if other.min_count == min_count and other.max_count == max_count:
             return other
         debug = "{0}%{1}".format(self.debug, other.debug)
-        return Constraint(self.bases | other.bases, self.cells, min_count, max_count, debug)
+
+        if self.patterns:
+            indicies, patterns = self.indicies, self.patterns
+            if other.patterns:
+                indicies2, patterns2 = other.indicies, other.patterns
+                assert indicies == indicies2
+                patterns = intersect_patterns(patterns, patterns2)
+            patterns, min_count, max_count = limit_patterns(patterns, min_count, max_count)
+        else:
+            if other.patterns:
+                indicies, patterns = other.indicies, other.patterns
+                patterns, min_count, max_count = limit_patterns(patterns, min_count, max_count)
+            else:
+                indicies = None
+                patterns = None
+
+        return Constraint(self.bases | other.bases, self.cells, min_count, max_count, debug, indicies=indicies, patterns=patterns)
 
 
 def basic(base, cells, count, level):
@@ -674,6 +739,17 @@ class Solver(object):
             self.add_constraint(cs)
         return None, None
 
+    def global_constraint(self):
+        if DEBUG > 20: print "global constraint"
+        count = self.level.total_count()
+        cells = self.level.all_cells()
+        moves, cs = basic("global", cells, count, self.level)
+        if moves:
+            return moves, cs
+        if cs:
+            self.add_constraint(cs)
+        return None, None
+
     def _solve(self):
         moves, cs = self.evaluate()
         if moves:
@@ -698,14 +774,9 @@ class Solver(object):
 
             if not self.new_stuff:
                 # add in the global constraint
-                count = self.level.total_count()
-                cells = self.level.all_cells()
-                moves, cs = basic("global", cells, count, self.level)
+                moves, cs = self.global_constraint()
                 if moves:
                     return moves, cs
-                if cs:
-                    self.add_constraint(cs)
-                if DEBUG > 20: print "global constraint"
 
         return None, None
 
@@ -714,11 +785,13 @@ class Solver(object):
         while True:
             moves, cs = self._solve()
             if not moves:
-                return self.level.done
+                break
             if DEBUG > 25: print "play", cs
             for cell, color in moves:
                 self.play(cell, color)
             if DEBUG > 10: self.level.dump(cs.bases, [c for c,_ in moves])
+
+        return self.level.done
 
 
 def main():
