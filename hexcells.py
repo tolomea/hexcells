@@ -354,6 +354,17 @@ class Constraint(object):
         debug = "({0}&{1})".format(self.debug, other.debug)
         return Constraint(bases, cells, min_count, max_count, debug)
 
+    def get_union(self, other):
+        if self.cells & other.cells:
+            return None
+        cells = self.cells | other.cells
+        len_cells = len(cells)
+        min_count = self.min_count + other.min_count
+        max_count = self.max_count + other.max_count
+        bases = self.bases | other.bases
+        debug = "({0}|{1})".format(self.debug, other.debug)
+        return Constraint(bases, cells, min_count, max_count, debug)
+
     def __str__(self):
         return "{s.__class__.__name__}({s.debug})".format(s=self)
 
@@ -500,6 +511,11 @@ def intersection(cs1, cs2, level):
     return None, None
 
 
+def union(cs1, cs2, level):
+    cs = cs1.get_union(cs2)
+    return None, cs
+
+
 class Solver(object):
     def __init__(self, level):
         self.level = level
@@ -508,9 +524,11 @@ class Solver(object):
         if DEBUG > 20: print "evaluate"
         self.all_constraints = dict()
         self.arith_new = set()
-        self.adv_new = set()
         self.arith_old = set()
+        self.adv_new = set()
         self.adv_old = set()
+        self.super_new = set()
+        self.super_old = set()
         self.new_stuff = True
         for c in self.level.all_cells():
             res = self.level.get_constrant(c)
@@ -536,13 +554,16 @@ class Solver(object):
             if cs is None:
                 return
             self.arith_new.discard(old)
+            self.arith_old.discard(old)
             self.adv_new.discard(old)
             self.adv_old.discard(old)
-            self.arith_old.discard(old)
+            self.super_new.discard(old)
+            self.super_old.discard(old)
         if DEBUG > 30: print "new", cs
         self.all_constraints[cs.cells] = cs
         self.arith_new.add(cs)
         self.adv_new.add(cs)
+        self.super_new.add(cs)
         self.new_stuff = True
 
     def play(self, cell, color):
@@ -615,6 +636,42 @@ class Solver(object):
             self.add_constraint(cs)
         return None, None
 
+    def super_arithmetic(self):
+        if DEBUG > 20: print "super arithmetic", len(self.all_constraints), len(self.super_new)
+        new_constraints = set()
+        def inner2(a):
+            a = list(a)
+            for i, cs1 in enumerate(a):
+                for cs2 in a[i:]:
+                    moves, cs = union(cs1, cs2, self.level)
+                    if moves:
+                        return moves, cs
+                    if cs:
+                        new_constraints.add(cs)
+            return None, None
+        def inner(a, b):
+            for cs1 in a:
+                for cs2 in b:
+                    moves, cs = union(cs1, cs2, self.level)
+                    if moves:
+                        return moves, cs
+                    if cs:
+                        new_constraints.add(cs)
+            return None, None
+        moves, cs = inner2(self.super_new)
+        if moves:
+            return moves, cs
+        moves, cs = inner(self.super_new, self.super_old)
+        if moves:
+            return moves, cs
+
+        self.super_old.update(self.super_new)
+        self.super_new = set()
+
+        for cs in new_constraints:
+            self.add_constraint(cs)
+        return None, None
+
     def _solve(self):
         moves, cs = self.evaluate()
         if moves:
@@ -628,6 +685,12 @@ class Solver(object):
 
             if not self.new_stuff:
                 moves, cs = self.advanced_arithmetic()
+                if moves:
+                    return moves, cs
+
+            if False:
+#            if not self.new_stuff:
+                moves, cs = self.super_arithmetic()
                 if moves:
                     return moves, cs
 
