@@ -270,6 +270,10 @@ class Level(object):
         return all(self._cells[c].done for c in self.all_cells())
 
 
+def transpose(matrix):
+    return zip(*matrix)
+
+
 class Constraint(object):
     def __init__(self, bases, cells, min_count, max_count, debug, indicies=None, patterns=None):
         self.bases = frozenset(bases)
@@ -307,8 +311,7 @@ class Constraint(object):
             return {(c, BLACK) for c in self.cells}
         if self.patterns:
             moves = set()
-            t_patterns = zip(*self.patterns)
-            for c, values in zip(self.indicies, t_patterns):
+            for c, values in zip(self.indicies, transpose(self.patterns)):
                 if len(set(values)) == 1:
                     moves.add((c, values[0]))
             return moves
@@ -404,15 +407,12 @@ def eval_modifier(cells, count, is_valid, wrap, level):
     for indicies in itertools.combinations(unknown_indicies, needed):
         indicies = set(indicies)
         new_colors = []
-        new_colors2 = []
         for i, c in enumerate(current_colors):
             if c == UNKNOWN:
                 if i in indicies:
                     new_colors.append(BLUE)
-                    new_colors2.append(BLUE)
                 else:
                     new_colors.append(BLACK)
-                    new_colors2.append(BLACK)
             else:
                 new_colors.append(c)
 
@@ -430,14 +430,16 @@ def eval_modifier(cells, count, is_valid, wrap, level):
 
         # check that this is a valid sequence
         if is_valid(wrapped):
-            valid.add(tuple(new_colors2))
+            valid.add(tuple(new_colors))
 
+    # sort them, filter the known ones and collect up the indicies
     indicies = []
-    for c, v in zip(cells, current_colors):
-        if v == UNKNOWN:
-            indicies.append(c)
-
-    return indicies, valid
+    values = []
+    for cell, orig_color, new_colors in sorted(zip(cells, current_colors, transpose(valid))):
+        if orig_color == UNKNOWN:
+            indicies.append(cell)
+            values.append(new_colors)
+    return indicies, transpose(values)
 
 def disjoint(base, cells, count, loop, level):
     def is_valid(new_colors):
