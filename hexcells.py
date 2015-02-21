@@ -271,7 +271,7 @@ class Level(object):
 
 
 class Constraint(object):
-    def __init__(self, bases, cells, min_count, max_count, indicies=None, patterns=None):
+    def __init__(self, bases, cells, min_count, max_count, debug, indicies=None, patterns=None):
         self.bases = frozenset(bases)
         self.cells = frozenset(cells)
         self.min_count = min_count
@@ -280,11 +280,13 @@ class Constraint(object):
         self.interesting = min_count != 0 or max_count != len(cells)
         self.indicies = indicies
         self.patterns = patterns
+        self.debug = debug
 
     @classmethod
-    def make(cls, bases, cells, min_count, max_count, level, indicies=None, patterns=None):
+    def make(cls, base, cells, min_count, max_count, level, indicies=None, patterns=None):
         cells, min_count, max_count = cls._normalize(cells, min_count, max_count, level)
-        return cls(bases, cells, min_count, max_count, indicies, patterns)
+        debug = str(base)
+        return Constraint({base}, cells, min_count, max_count, debug, indicies, patterns)
 
     @staticmethod
     def _normalize(cells, min_count, max_count, level):
@@ -331,7 +333,8 @@ class Constraint(object):
             if min_count == 0 and max_count == len(cells):
                 return None
             assert max_count >= min_count
-            return Constraint(bases, cells, min_count, max_count)
+            debug = "({0}-{1})".format(self.debug, other.debug)
+            return Constraint(bases, cells, min_count, max_count, debug)
         else:
             return None
 
@@ -348,10 +351,11 @@ class Constraint(object):
             return None
         bases = self.bases | other.bases
         assert max_count >= min_count
-        return Constraint(bases, cells, min_count, max_count)
+        debug = "({0}&{1})".format(self.debug, other.debug)
+        return Constraint(bases, cells, min_count, max_count, debug)
 
     def __str__(self):
-        return "{s.__class__.__name__}({s.bases})".format(s=self)
+        return "{s.__class__.__name__}({s.debug})".format(s=self)
 
     def merge(self, other):
         assert self.cells == other.cells
@@ -361,11 +365,12 @@ class Constraint(object):
             return None
         if other.min_count == min_count and other.max_count == max_count:
             return other
-        return Constraint(self.bases | other.bases, self.cells, min_count, max_count)
+        debug = "{0}%{1}".format(self.debug, other.debug)
+        return Constraint(self.bases | other.bases, self.cells, min_count, max_count, debug)
 
 
 def basic(base, cells, count, level):
-    cs = Constraint.make({base}, cells, count, count, level)
+    cs = Constraint.make(base, cells, count, count, level)
     moves = cs.get_moves(level)
     if moves:
         return moves, cs
@@ -439,7 +444,7 @@ def disjoint(base, cells, count, loop, level):
         return False
 
     indicies, valid = eval_modifier(cells, count, is_valid, loop, level)
-    cs = Constraint.make({base}, cells, count, count, level, indicies, valid)
+    cs = Constraint.make(base, cells, count, count, level, indicies, valid)
     moves = cs.get_moves(level)
     if moves:
         return moves, cs
@@ -464,7 +469,7 @@ def joint(base, cells, count, loop, level):
         return True
 
     indicies, valid = eval_modifier(cells, count, is_valid, loop, level)
-    cs = Constraint.make({base}, cells, count, count, level, indicies, valid)
+    cs = Constraint.make(base, cells, count, count, level, indicies, valid)
     moves = cs.get_moves(level)
     if moves:
         return moves, cs
@@ -500,7 +505,7 @@ class Solver(object):
         self.level = level
 
     def evaluate(self):
-        if DEBUG > 20: print "init"
+        if DEBUG > 20: print "evaluate"
         self.all_constraints = dict()
         self.new_constraints = set()
         self.new2 = set()
@@ -611,8 +616,6 @@ class Solver(object):
         return None, None
 
     def _solve(self):
-        if DEBUG > 10: self.level.dump()
-
         moves, cs = self.evaluate()
         if moves:
             return moves, cs
@@ -642,10 +645,12 @@ class Solver(object):
         return None, None
 
     def solve(self):
+        if DEBUG > 10: self.level.dump()
         while True:
             moves, cs = self._solve()
             if not moves:
                 return self.level.done
+            if DEBUG > 25: print "play", cs
             for cell, color in moves:
                 self.play(cell, color)
             if DEBUG > 10: self.level.dump(cs.bases, [c for c,_ in moves])
