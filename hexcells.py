@@ -18,6 +18,7 @@ Level credits
 alpha-first_hexcells_test - Invaluable for basic debug and testing
 cookie-teamwork - All the early development was against this level
 cookie-the_star - This one necessitated advanced_arithmetic
+darman-tutorial_12 - Took a lot of rewriting and all the pattern stuff to get this going
 """
 
 from collections import defaultdict
